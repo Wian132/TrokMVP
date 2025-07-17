@@ -10,7 +10,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
 
   useEffect(() => {
-    const publicPaths = ['/login', '/signup']
+    const publicPaths = ['/', '/login', '/signup']
     if (!session && !publicPaths.includes(pathname)) {
       router.replace('/login')
     }

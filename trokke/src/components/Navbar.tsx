@@ -13,7 +13,7 @@ const navItems = [
   { href: '/admin/business-stores', label: 'Stores' },
 ]
 
-export default function Sidebar() {
+export default function Navbar() {
   const { session } = useAuth()
   const pathname = usePathname()
   const router = useRouter()
@@ -26,13 +26,13 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-60 h-screen fixed left-0 top-0 bg-gray-100 text-black p-4 space-y-2 overflow-y-auto">
-      <nav className="flex flex-col space-y-1">
+    <header className="fixed top-0 left-0 right-0 h-16 bg-gray-100 flex items-center px-6 shadow z-10 ml-60 text-black">
+      <nav className="flex gap-4 flex-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`p-2 rounded hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : 'text-black'}`}
+            className={`py-3 px-5 rounded text-lg hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : 'text-black'}`}
           >
             {item.label}
           </Link>
@@ -40,10 +40,10 @@ export default function Sidebar() {
       </nav>
       <button
         onClick={handleLogout}
-        className="mt-4 p-2 w-full text-left bg-red-500 text-white rounded"
+        className="py-3 px-5 bg-red-500 text-white rounded text-lg"
       >
         Logout
       </button>
-    </aside>
+    </header>
   )
 }

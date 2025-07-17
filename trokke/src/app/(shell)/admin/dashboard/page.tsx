@@ -5,7 +5,7 @@ import {
   GoogleMap,
   MarkerF,
   InfoWindowF,
-  LoadScript,
+  useJsApiLoader,
 } from '@react-google-maps/api';
 import supabase from '@/lib/supabaseClient';
 
@@ -59,9 +59,15 @@ export default function Dashboard() {
 
   const mapCenter = { lat: trucks[0]?.latitude || 0, lng: trucks[0]?.longitude || 0 };
 
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
+  });
+
+  if (!isLoaded) return <div>Loading...</div>;
+
   return (
     <div className="w-full h-[80vh]">
-      <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!}>
         <GoogleMap
           mapContainerStyle={{ width: '100%', height: '100%' }}
           zoom={8}
@@ -115,7 +121,6 @@ export default function Dashboard() {
             </InfoWindowF>
           )}
         </GoogleMap>
-      </LoadScript>
     </div>
   );
 }
