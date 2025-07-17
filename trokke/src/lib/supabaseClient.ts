@@ -12,3 +12,4 @@ const supabase = createClient(supabaseUrl, supabaseAnonKey);
 // Use a default export for the client instance. This is a common pattern
 // for modules that provide a single, primary export.
 export default supabase;
+export { supabase };
