@@ -1,60 +1,76 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { FaTruckMoving } from 'react-icons/fa'
-import supabase from '@/lib/supabaseClient'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 export default function LoginPage() {
-  const router = useRouter()
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
+  const router = useRouter();
+  const supabase = createClient();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    console.log('[LoginPage] Attempting to sign in with email:', email);
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     if (error) {
-      setError(error.message)
+      console.error('[LoginPage] Supabase sign-in error:', error.message);
+      setError(error.message);
+      setLoading(false);
     } else {
-      router.push('/dashboard')
+      console.log('[LoginPage] Sign-in successful. User data:', data.user);
+      console.log('[LoginPage] Redirecting to /');
+      // CRITICAL FIX: Instead of refreshing, we push the user to the root page.
+      // The root page will then handle the server-side redirect to the correct dashboard.
+      router.push('/');
     }
-  }
+  };
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 p-4">
-      <div className="w-full max-w-md space-y-6 bg-white p-8 rounded shadow">
-        <h1 className="text-3xl font-bold flex items-center gap-2 justify-center">
-          <FaTruckMoving className="text-blue-600" /> Login
-        </h1>
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-          <input
-            type="email"
-            placeholder="Email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            className="p-3 border rounded text-lg"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="p-3 border rounded text-lg"
-            required
-          />
-          {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button type="submit" className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded text-lg">
-            Login
+    <div className="flex items-center justify-center min-h-screen bg-gray-100">
+      <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md">
+        <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
+        {error && <p className="text-red-500 text-center mb-4">{error}</p>}
+        <form onSubmit={handleLogin}>
+          <div className="mb-4">
+            <label className="block text-gray-700">Email</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-black"
+              required
+            />
+          </div>
+          <div className="mb-6">
+            <label className="block text-gray-700">Password</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg text-black"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="w-full bg-blue-500 text-white py-2 rounded-lg hover:bg-blue-600 disabled:bg-blue-300"
+            disabled={loading}
+          >
+            {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
-        <p className="text-sm text-center">
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" className="text-blue-600 underline">Sign up</Link>
-        </p>
       </div>
     </div>
-  )
+  );
 }

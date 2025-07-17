@@ -1,193 +1,153 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { createClient } from '@/utils/supabase/client';
 import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import { type Database } from '@/types/supabase';
 
-interface Store {
-  id: number;
-  name: string;
-  address: string;
-  latitude?: number | null;
-  longitude?: number | null;
-}
+// Define the type for a Store, matching the table columns
+type BusinessStore = Database['public']['Tables']['business_stores']['Row'];
+
+// Define the libraries to be loaded by the Google Maps API
+const libraries: ('places')[] = ['places'];
 
 export default function BusinessStoresPage() {
-  const [stores, setStores] = useState<Store[]>([]);
-  const [name, setName] = useState('');
-  const [address, setAddress] = useState('');
-  const [lat, setLat] = useState<number | null>(null);
-  const [lng, setLng] = useState<number | null>(null);
-  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const supabase = createClient();
+  const [stores, setStores] = useState<BusinessStore[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchStores = async () => {
-    const { data } = await supabase.from('business_stores').select('*').order('id');
-    if (data) setStores(data as Store[]);
-  };
+  // Form state
+  const [newStoreName, setNewStoreName] = useState('');
+  const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
+  const [newStoreLocation, setNewStoreLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
+
+  const { isLoaded, loadError } = useJsApiLoader({
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY || '',
+    libraries,
+  });
+
+  const fetchStores = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase.from('business_stores').select('*');
+    if (error) {
+      setError(error.message);
+    } else {
+      setStores(data || []);
+    }
+    setLoading(false);
+  }, [supabase]);
 
   useEffect(() => {
     fetchStores();
-  }, []);
+  }, [fetchStores]);
+
+  const handleAutocompleteLoad = (autocomplete: google.maps.places.Autocomplete) => {
+    autocompleteRef.current = autocomplete;
+  };
 
   const handlePlaceChanged = () => {
-    if (!autocompleteRef.current) return;
-    const place = autocompleteRef.current.getPlace();
-    setAddress(place.formatted_address || '');
-    if (place.geometry) {
-      setLat(place.geometry.location?.lat() || null);
-      setLng(place.geometry.location?.lng() || null);
+    if (autocompleteRef.current) {
+      const place = autocompleteRef.current.getPlace();
+      if (place.geometry?.location && place.formatted_address) {
+        setNewStoreLocation({
+          lat: place.geometry.location.lat(),
+          lng: place.geometry.location.lng(),
+          address: place.formatted_address,
+        });
+      }
     }
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
+  const handleCreateStore = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    await supabase.from('business_stores').insert({ name, address, latitude: lat, longitude: lng });
-    setName('');
-    setAddress('');
-    setLat(null);
-    setLng(null);
-    fetchStores();
-  };
-
-  const handleDelete = async (id: number) => {
-    await supabase.from('business_stores').delete().eq('id', id);
-    fetchStores();
-  };
-
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editName, setEditName] = useState('');
-  const [editAddress, setEditAddress] = useState('');
-  const editAutoRef = useRef<google.maps.places.Autocomplete | null>(null);
-  const [editLat, setEditLat] = useState<number | null>(null);
-  const [editLng, setEditLng] = useState<number | null>(null);
-
-  const { isLoaded } = useJsApiLoader({
-    id: 'google-map-script',
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string,
-    libraries: ['places'],
-  });
-
-  if (!isLoaded) return <div>Loading...</div>;
-
-  const handleEditPlace = () => {
-    if (!editAutoRef.current) return;
-    const place = editAutoRef.current.getPlace();
-    setEditAddress(place.formatted_address || '');
-    if (place.geometry) {
-      setEditLat(place.geometry.location?.lat() || null);
-      setEditLng(place.geometry.location?.lng() || null);
+    if (!newStoreName || !newStoreLocation) {
+      setError('Please provide a store name and select an address.');
+      return;
     }
-  };
+    setError(null);
 
-  const startEdit = (store: Store) => {
-    setEditingId(store.id);
-    setEditName(store.name);
-    setEditAddress(store.address);
-    setEditLat(store.latitude || null);
-    setEditLng(store.longitude || null);
-  };
+    // Use PostGIS format: POINT(lng lat)
+    const locationString = `POINT(${newStoreLocation.lng} ${newStoreLocation.lat})`;
 
-  const cancelEdit = () => {
-    setEditingId(null);
-    setEditName('');
-    setEditAddress('');
-    setEditLat(null);
-    setEditLng(null);
-  };
-
-  const saveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (editingId === null) return;
-    await supabase
+    const { error: insertError } = await supabase
       .from('business_stores')
-      .update({ name: editName, address: editAddress, latitude: editLat, longitude: editLng })
-      .eq('id', editingId);
-    cancelEdit();
-    fetchStores();
+      .insert({
+        name: newStoreName,
+        address: newStoreLocation.address,
+        location: locationString,
+      });
+
+    if (insertError) {
+      setError(insertError.message);
+    } else {
+      // Reset form and refetch data
+      setNewStoreName('');
+      setNewStoreLocation(null);
+      const input = document.getElementById('autocomplete-input') as HTMLInputElement;
+      if (input) input.value = '';
+      await fetchStores();
+    }
   };
+
+  if (loadError) return <div className="p-6 text-red-500">Error loading maps. Please check your API key.</div>;
+  if (!isLoaded || loading) return <div className="p-6">Loading...</div>;
 
   return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-2xl font-bold">Business Stores</h1>
-
-      <form onSubmit={handleCreate} className="space-y-2">
-          <div>
-            <label className="block">Name</label>
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-gray-900 mb-4">Manage Business Stores</h1>
+      <div className="mb-8 bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Add a New Store</h2>
+        <form onSubmit={handleCreateStore} className="space-y-4">
+          <input
+            type="text"
+            placeholder="Store Name"
+            value={newStoreName}
+            onChange={(e) => setNewStoreName(e.target.value)}
+            required
+            className="w-full p-2 border rounded text-gray-900 placeholder-gray-600"
+          />
+          <Autocomplete onLoad={handleAutocompleteLoad} onPlaceChanged={handlePlaceChanged}>
             <input
-              className="border p-2 w-full"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              required
+              id="autocomplete-input"
+              type="text"
+              placeholder="Enter a location"
+              className="w-full p-2 border rounded text-gray-900 placeholder-gray-600"
             />
-          </div>
-          <div>
-            <label className="block">Address</label>
-            <Autocomplete onLoad={(a) => (autocompleteRef.current = a)} onPlaceChanged={handlePlaceChanged}>
-              <input
-                className="border p-2 w-full"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                required
-              />
-            </Autocomplete>
-          </div>
-          <input type="hidden" value={lat ?? ''} name="latitude" />
-          <input type="hidden" value={lng ?? ''} name="longitude" />
-          <button className="bg-blue-600 text-white px-4 py-2" type="submit">Add Store</button>
+          </Autocomplete>
+          <button type="submit" className="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+            Create Store
+          </button>
         </form>
-
-      <ul className="space-y-4">
-        {stores.map((store) => (
-          <li key={store.id} className="border p-4">
-            {editingId === store.id ? (
-                <form onSubmit={saveEdit} className="space-y-2">
-                  <div>
-                    <label className="block">Name</label>
-                    <input
-                      className="border p-2 w-full"
-                      value={editName}
-                      onChange={(e) => setEditName(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block">Address</label>
-                    <Autocomplete onLoad={(a) => (editAutoRef.current = a)} onPlaceChanged={handleEditPlace}>
-                      <input
-                        className="border p-2 w-full"
-                        value={editAddress}
-                        onChange={(e) => setEditAddress(e.target.value)}
-                        required
-                      />
-                    </Autocomplete>
-                  </div>
-                  <input type="hidden" value={editLat ?? ''} />
-                  <input type="hidden" value={editLng ?? ''} />
-                  <div className="space-x-2">
-                    <button className="bg-green-600 text-white px-3 py-1" type="submit">Save</button>
-                    <button className="bg-gray-400 text-white px-3 py-1" type="button" onClick={cancelEdit}>
-                      Cancel
-                    </button>
-                  </div>
-                </form>
-            ) : (
-              <div className="space-y-2">
-                <p className="font-semibold">{store.name}</p>
-                <p>{store.address}</p>
-                <div className="space-x-2">
-                  <button className="bg-yellow-500 text-white px-3 py-1" onClick={() => startEdit(store)}>
-                    Edit
-                  </button>
-                  <button className="bg-red-600 text-white px-3 py-1" onClick={() => handleDelete(store.id)}>
-                    Delete
-                  </button>
-                </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+        {error && <p className="text-red-500 mt-4">{error}</p>}
+      </div>
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Our Stores</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider">Name</th>
+                <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider">Address</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {stores.length > 0 ? (
+                stores.map((store) => (
+                  <tr key={store.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{store.name}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{store.address}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={2} className="px-6 py-4 text-center text-gray-500">No stores found.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }
-

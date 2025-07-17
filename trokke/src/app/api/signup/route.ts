@@ -1,52 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { NextResponse } from 'next/server';
+import { createClient } from '@/utils/supabase/server';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  { auth: { persistSession: false } }
-)
+export async function POST(request: Request) {
+  const requestUrl = new URL(request.url);
+  const formData = await request.formData();
+  const email = String(formData.get('email'));
+  const password = String(formData.get('password'));
+  const role = String(formData.get('role'));
+  
+  // We now MUST await the createClient() function call.
+  const supabase = await createClient();
 
-export async function POST(req: NextRequest) {
-  const { fullName, email, password } = await req.json()
-
-  const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+  const { error } = await supabase.auth.signUp({
     email,
-    password
-  })
+    password,
+    options: {
+      data: {
+        role: role,
+      },
+      emailRedirectTo: `${requestUrl.origin}/auth/callback`,
+    },
+  });
 
-  if (signUpError || !signUpData.user) {
-    return NextResponse.json(
-      { error: signUpError?.message || 'Failed to sign up' },
-      { status: 400 }
-    )
+  if (error) {
+    console.error('Supabase signup error:', error);
+    return NextResponse.redirect(
+      `${requestUrl.origin}/login?error=Could not authenticate user`,
+      {
+        status: 301,
+      }
+    );
   }
 
-  const userId = signUpData.user.id
-
-  const { error: profileError } = await supabase.from('profiles').insert({
-    id: userId,
-    full_name: fullName,
-    role: 'client'
-  })
-
-  if (profileError) {
-    return NextResponse.json(
-      { error: profileError.message },
-      { status: 400 }
-    )
-  }
-
-  const { error: clientError } = await supabase.from('clients').insert({
-    profile_id: userId
-  })
-
-  if (clientError) {
-    return NextResponse.json(
-      { error: clientError.message },
-      { status: 400 }
-    )
-  }
-
-  return NextResponse.json({ success: true })
+  return NextResponse.redirect(
+    `${requestUrl.origin}/login?message=Check email to continue sign in process`,
+    {
+      status: 301,
+    }
+  );
 }
