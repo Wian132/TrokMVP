@@ -3,17 +3,20 @@
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAuth } from '@/components/AuthContext'
+import supabase from '@/lib/supabaseClient'
 
 export default function Home() {
-  const { session } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
-    if (session) {
-      router.replace('/dashboard')
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getSession()
+      if (data.session) {
+        router.replace('/dashboard')
+      }
     }
-  }, [session, router])
+    checkSession()
+  }, [router])
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-4">
