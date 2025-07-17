@@ -1,4 +1,3 @@
-// src/app/api/signup/route.ts
 import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 
@@ -9,7 +8,8 @@ export async function POST(request: Request) {
   const password = String(formData.get('password'));
   const role = String(formData.get('role'));
   
-  const supabase = createClient();
+  // We now MUST await the createClient() function call.
+  const supabase = await createClient();
 
   const { error } = await supabase.auth.signUp({
     email,

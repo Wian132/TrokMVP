@@ -1,22 +1,30 @@
-"use client";
-import { supabase } from "../../../../lib/supabaseClient";
-import { useEffect, useState } from "react";
-import Link from "next/link";
+'use client';
 
-// Define the client profile interface to match the database schema
-interface ClientProfile {
+import { useEffect, useState, useCallback } from 'react';
+import { createClient } from '@/utils/supabase/client';
+import Link from 'next/link';
+
+// Define a more specific type for the data we fetch
+type ClientProfile = {
   id: string; // This is the profile_id (UUID)
+  full_name: string | null;
+  contact_phone: string | null;
+  clients: { company_name: string | null }[] | null;
+};
+
+type TransformedClient = {
+  id: string;
   full_name: string;
   contact_phone: string | null;
   company_name: string | null;
 }
 
-const ClientsPage = () => {
-  const [clients, setClients] = useState<ClientProfile[]>([]);
+export default function ClientsPage() {
+  const supabase = createClient();
+  const [clients, setClients] = useState<TransformedClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state for creating a new client
   const [newClient, setNewClient] = useState({
     fullName: "",
     email: "",
@@ -25,13 +33,8 @@ const ClientsPage = () => {
     companyName: "",
   });
 
-  useEffect(() => {
-    fetchClients();
-  }, []);
-
-  const fetchClients = async () => {
+  const fetchClients = useCallback(async () => {
     setLoading(true);
-    // Fetch profiles where the role is 'client'
     const { data, error } = await supabase
       .from("profiles")
       .select("id, full_name, contact_phone, clients ( company_name )")
@@ -39,20 +42,21 @@ const ClientsPage = () => {
 
     if (error) {
       setError(error.message);
-      console.error("Error fetching clients:", error.message);
     } else {
-      // Transform the data to match the ClientProfile interface
-      const transformedData = data.map(profile => ({
-          id: profile.id,
-          full_name: profile.full_name || '',
-          contact_phone: profile.contact_phone || null,
-          // Assuming a one-to-one relationship, so we take the first client entry
-          company_name: Array.isArray(profile.clients) && profile.clients.length > 0 ? profile.clients[0].company_name : null,
+      const transformedData = (data as ClientProfile[]).map(profile => ({
+        id: profile.id,
+        full_name: profile.full_name || '',
+        contact_phone: profile.contact_phone || null,
+        company_name: Array.isArray(profile.clients) && profile.clients.length > 0 ? profile.clients[0].company_name : null,
       }));
       setClients(transformedData);
     }
     setLoading(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    fetchClients();
+  }, [fetchClients]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -63,7 +67,6 @@ const ClientsPage = () => {
     e.preventDefault();
     setError(null);
 
-    // Step 1: Create the user in auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: newClient.email,
       password: newClient.password,
@@ -73,10 +76,8 @@ const ClientsPage = () => {
       setError(authError?.message || "Failed to create user.");
       return;
     }
-
     const userId = authData.user.id;
 
-    // Step 2: Create the profile
     const { error: profileError } = await supabase.from("profiles").insert({
       id: userId,
       full_name: newClient.fullName,
@@ -85,47 +86,29 @@ const ClientsPage = () => {
     });
 
     if (profileError) {
-      setError(profileError.message);
+      setError(`Profile Error: ${profileError.message}`);
       return;
     }
 
-    // Step 3: Create the client entry
     const { error: clientError } = await supabase.from("clients").insert({
       profile_id: userId,
       company_name: newClient.companyName,
     });
 
     if (clientError) {
-      setError(clientError.message);
+      setError(`Client Entry Error: ${clientError.message}`);
       return;
     }
 
-    // Refresh the client list and reset the form
-    fetchClients();
-    setNewClient({
-        fullName: "",
-        email: "",
-        password: "",
-        contactPhone: "",
-        companyName: "",
-    });
+    await fetchClients();
+    setNewClient({ fullName: "", email: "", password: "", contactPhone: "", companyName: "" });
   };
 
-  if (loading) {
-    return <div className="p-6 font-bold text-gray-900">Loading clients...</div>;
-  }
-
-  if (error) {
-    return <div className="p-6 text-red-500">Error: {error}</div>;
-  }
+  if (loading) return <div className="p-6 font-bold text-gray-900">Loading clients...</div>;
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">
-        Manage Clients
-      </h1>
-
-      {/* Form to create a new client */}
+      <h1 className="text-2xl font-bold text-gray-900 mb-6">Manage Clients</h1>
       <div className="mb-8 bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Create New Client</h2>
         <form onSubmit={handleCreateClient} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -138,7 +121,6 @@ const ClientsPage = () => {
         </form>
         {error && <p className="text-red-500 mt-4">{error}</p>}
       </div>
-
       <div className="bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Current Clients</h2>
         <div className="overflow-x-auto">
@@ -174,6 +156,4 @@ const ClientsPage = () => {
       </div>
     </div>
   );
-};
-
-export default ClientsPage;
+}

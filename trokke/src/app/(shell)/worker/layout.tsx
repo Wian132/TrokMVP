@@ -1,28 +1,24 @@
-"use client";
-import { useAuth } from "@/components/AuthContext";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+'use client';
 
-export default function WorkerLayout({ children }: { children: React.ReactNode }) {
-  const { profile, loading } = useAuth();
-  const router = useRouter();
+import { useAuth } from '@/components/AuthContext';
 
-  useEffect(() => {
-    // If loading is finished and the user is not a worker, redirect them.
-    if (!loading && profile?.role !== 'worker') {
-      router.push('/login'); // Or a dedicated "unauthorized" page
-    }
-  }, [loading, profile, router]);
+export default function WorkerLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  // The old `loading` and `profile` properties are gone.
+  // The main auth check is now done in the parent `(shell)/layout.tsx`.
+  const { session } = useAuth();
 
-  // While loading or if the user is not a worker, show a loading indicator.
-  if (loading || profile?.role !== 'worker') {
+  if (!session) {
+    // This provides a fallback loading state while the redirect happens.
     return (
-        <div className="w-full h-full flex items-center justify-center">
-            <p>Loading...</p>
-        </div>
+      <div className="flex h-screen items-center justify-center">
+        <p>Loading...</p>
+      </div>
     );
   }
 
-  // If the user is a worker, show the page content.
   return <>{children}</>;
 }

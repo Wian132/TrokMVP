@@ -1,28 +1,28 @@
-"use client";
-import { supabase } from "../../../../../lib/supabaseClient";
-import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams } from "next/navigation";
-import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+'use client';
 
-// Interface for the store data from the 'client_stores' table
-interface Store {
-  id: number;
-  name: string;
-  address: string | null;
-}
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
+import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
+import { type Database } from '@/types/supabase';
+
+type ClientStore = Database['public']['Tables']['client_stores']['Row'];
+// This type represents the shape of the data returned by the query.
+// Since the relationship is one-to-one (.single()), profiles will be an object.
+type ClientRecordWithProfile = { id: number, profiles: { full_name: string | null } | null };
 
 const libraries: ('places')[] = ['places'];
 
-const ClientStoresPage = () => {
+export default function ClientStoresPage() {
+  const supabase = createClient();
   const params = useParams();
   const profileId = params.id as string;
 
-  const [stores, setStores] = useState<Store[]>([]);
+  const [stores, setStores] = useState<ClientStore[]>([]);
   const [clientName, setClientName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Form state for adding a new site
   const [newSiteName, setNewSiteName] = useState('');
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
   const [newSiteLocation, setNewSiteLocation] = useState<{ lat: number; lng: number; address: string } | null>(null);
@@ -37,43 +37,34 @@ const ClientStoresPage = () => {
     setLoading(true);
     setError(null);
     try {
-      // Step 1: Fetch client's profile and integer ID
       const { data: clientRecord, error: clientError } = await supabase
         .from("clients")
-        .select(`
-          id,
-          profiles ( full_name )
-        `)
+        .select(`id, profiles ( full_name )`)
         .eq("profile_id", profileId)
         .single();
       
       if (clientError) throw clientError;
       
-      const clientIntegerId = clientRecord.id;
-      
-      // The full_name is nested. Since the relationship is one-to-one (profile_id is unique),
-      // Supabase returns `profiles` as an object. We cast it via 'unknown' to resolve a strict
-      // TypeScript error where the linter incorrectly infers the type.
-      const profileData = clientRecord.profiles as unknown as { full_name: string } | null;
-      const clientFullName = profileData?.full_name;
+      // Using 'as unknown as' to bypass the linter's incorrect type inference.
+      const record = clientRecord as unknown as ClientRecordWithProfile;
+      const clientIntegerId = record.id;
+      const clientFullName = record.profiles?.full_name;
       setClientName(clientFullName || "Client");
 
-      // Step 2: Fetch the client's stores
       const { data: storesData, error: storesError } = await supabase
         .from("client_stores")
-        .select("id, name, address")
+        .select("*")
         .eq("client_id", clientIntegerId);
 
       if (storesError) throw storesError;
       setStores(storesData || []);
-
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "An unexpected error occurred.";
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [profileId]);
+  }, [profileId, supabase]);
 
   useEffect(() => {
     fetchClientData();
@@ -86,7 +77,7 @@ const ClientStoresPage = () => {
   const handlePlaceChanged = () => {
     if (autocompleteRef.current) {
       const place = autocompleteRef.current.getPlace();
-      if (place.geometry && place.geometry.location && place.formatted_address) {
+      if (place.geometry?.location && place.formatted_address) {
         setNewSiteLocation({
           lat: place.geometry.location.lat(),
           lng: place.geometry.location.lng(),
@@ -104,48 +95,41 @@ const ClientStoresPage = () => {
     }
     setError(null);
 
-    // Get the client's integer ID again
     const { data: clientRecord } = await supabase.from("clients").select("id").eq("profile_id", profileId).single();
     if (!clientRecord) {
-        setError("Could not find client to add site to.");
-        return;
+      setError("Could not find client to add site to.");
+      return;
     }
 
-    const { error } = await supabase
+    const locationString = `POINT(${newSiteLocation.lng} ${newSiteLocation.lat})`;
+
+    const { error: insertError } = await supabase
       .from('client_stores')
-      .insert([{
+      .insert({
         client_id: clientRecord.id,
         name: newSiteName,
         address: newSiteLocation.address,
-        latitude: newSiteLocation.lat,
-        longitude: newSiteLocation.lng,
-      }]);
+        location: locationString,
+      });
 
-    if (error) {
-      setError(error.message);
+    if (insertError) {
+      setError(insertError.message);
     } else {
-      // Reset form and refresh data
       setNewSiteName('');
       setNewSiteLocation(null);
       const input = document.getElementById('autocomplete-input-site') as HTMLInputElement;
       if (input) input.value = '';
-      fetchClientData(); // Refetch stores to show the new one
+      await fetchClientData();
     }
   };
 
-  if (loading || !isLoaded) {
-    return <div className="p-6 font-bold text-gray-900">Loading Client Data...</div>;
-  }
+  if (loading || !isLoaded) return <div className="p-6 font-bold text-gray-900">Loading Client Data...</div>;
   if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
   if (loadError) return <div className="p-6 text-red-500">Error loading maps.</div>;
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4">
-        {clientName}&apos;s Stores
-      </h1>
-
-      {/* Form to add a new site */}
+      <h1 className="text-2xl font-bold text-gray-900 mb-6 border-b border-gray-200 pb-4">{clientName}&apos;s Stores</h1>
       <div className="mb-8 bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Add New Site</h2>
         <form onSubmit={handleCreateSite} className="space-y-4">
@@ -157,7 +141,6 @@ const ClientStoresPage = () => {
         </form>
         {error && <p className="text-red-500 mt-4">{error}</p>}
       </div>
-
       <div className="bg-white p-6 rounded-lg shadow">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Current Sites</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -177,6 +160,4 @@ const ClientStoresPage = () => {
       </div>
     </div>
   );
-};
-
-export default ClientStoresPage;
+}

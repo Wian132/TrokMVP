@@ -10,10 +10,8 @@ import {
   LogOut,
   User,
   Store,
-  LayoutDashboard,
 } from 'lucide-react';
 
-// Define the props for the Sidebar component
 interface SidebarProps {
   userRole: string;
 }
@@ -26,25 +24,26 @@ const Sidebar = ({ userRole }: SidebarProps) => {
   };
 
   const getMenuItems = () => {
+    // The href paths should NOT include the (shell) group folder.
+    // Next.js's router ignores these folders for URL paths.
     switch (userRole) {
       case 'admin':
         return [
-          { href: '/(shell)/admin/dashboard', icon: <Home />, label: 'Dashboard' },
-          { href: '/(shell)/admin/workers', icon: <Users />, label: 'Workers' },
-          { href: '/(shell)/admin/clients', icon: <User />, label: 'Clients' },
-          { href: '/(shell)/admin/trucks', icon: <Truck />, label: 'Trucks' },
-          { href: '/(shell)/admin/business-stores', icon: <Store />, label: 'Business Stores' },
-          { href: '/(shell)/admin/layout', icon: <LayoutDashboard />, label: 'Layout' },
+          { href: '/admin/dashboard', icon: <Home />, label: 'Dashboard' },
+          { href: '/admin/workers', icon: <Users />, label: 'Workers' },
+          { href: '/admin/clients', icon: <User />, label: 'Clients' },
+          { href: '/admin/trucks', icon: <Truck />, label: 'Trucks' },
+          { href: '/admin/business-stores', icon: <Store />, label: 'Business Stores' },
         ];
       case 'worker':
         return [
-          { href: '/(shell)/worker/dashboard', icon: <Home />, label: 'Dashboard' },
-          { href: '/(shell)/worker/my-truck', icon: <Truck />, label: 'My Truck' },
+          { href: '/worker/dashboard', icon: <Home />, label: 'Dashboard' },
+          { href: '/worker/my-truck', icon: <Truck />, label: 'My Truck' },
         ];
       case 'client':
         return [
-          { href: '/(shell)/client/dashboard', icon: <Home />, label: 'Dashboard' },
-          { href: '/(shell)/client/my-stores', icon: <Building />, label: 'My Stores' },
+          { href: '/client/dashboard', icon: <Home />, label: 'Dashboard' },
+          { href: '/client/my-stores', icon: <Building />, label: 'My Stores' },
         ];
       default:
         return [];

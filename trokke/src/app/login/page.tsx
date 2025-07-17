@@ -16,19 +16,23 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     setLoading(true);
+    console.log('[LoginPage] Attempting to sign in with email:', email);
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) {
+      console.error('[LoginPage] Supabase sign-in error:', error.message);
       setError(error.message);
       setLoading(false);
     } else {
-      // IMPORTANT: router.refresh() is crucial to re-run the middleware and server components
-      // to get the new session cookie.
-      router.refresh();
+      console.log('[LoginPage] Sign-in successful. User data:', data.user);
+      console.log('[LoginPage] Redirecting to /');
+      // CRITICAL FIX: Instead of refreshing, we push the user to the root page.
+      // The root page will then handle the server-side redirect to the correct dashboard.
+      router.push('/');
     }
   };
 
@@ -44,7 +48,7 @@ export default function LoginPage() {
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border rounded-lg text-black"
               required
             />
           </div>
@@ -54,7 +58,7 @@ export default function LoginPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
+              className="w-full px-3 py-2 border rounded-lg text-black"
               required
             />
           </div>
