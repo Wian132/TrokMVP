@@ -26,13 +26,13 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="w-60 h-screen fixed left-0 top-0 bg-gray-100 p-4 space-y-2 overflow-y-auto">
+    <aside className="w-60 h-screen fixed left-0 top-0 bg-gray-100 text-black p-4 space-y-2 overflow-y-auto">
       <nav className="flex flex-col space-y-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`p-2 rounded hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : ''}`}
+            className={`p-2 rounded hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : 'text-black'}`}
           >
             {item.label}
           </Link>
