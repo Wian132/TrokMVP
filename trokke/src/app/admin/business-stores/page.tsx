@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { LoadScript, Autocomplete } from '@react-google-maps/api';
+import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 
 interface Store {
   id: number;
@@ -61,6 +61,14 @@ export default function BusinessStoresPage() {
   const [editLat, setEditLat] = useState<number | null>(null);
   const [editLng, setEditLng] = useState<number | null>(null);
 
+  const { isLoaded } = useJsApiLoader({
+    id: 'google-map-script',
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string,
+    libraries: ['places'],
+  });
+
+  if (!isLoaded) return <div>Loading...</div>;
+
   const handleEditPlace = () => {
     if (!editAutoRef.current) return;
     const place = editAutoRef.current.getPlace();
@@ -102,8 +110,7 @@ export default function BusinessStoresPage() {
     <div className="p-4 space-y-6">
       <h1 className="text-2xl font-bold">Business Stores</h1>
 
-      <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string} libraries={['places']}>
-        <form onSubmit={handleCreate} className="space-y-2">
+      <form onSubmit={handleCreate} className="space-y-2">
           <div>
             <label className="block">Name</label>
             <input
@@ -128,13 +135,11 @@ export default function BusinessStoresPage() {
           <input type="hidden" value={lng ?? ''} name="longitude" />
           <button className="bg-blue-600 text-white px-4 py-2" type="submit">Add Store</button>
         </form>
-      </LoadScript>
 
       <ul className="space-y-4">
         {stores.map((store) => (
           <li key={store.id} className="border p-4">
             {editingId === store.id ? (
-              <LoadScript googleMapsApiKey={process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY as string} libraries={['places']}>
                 <form onSubmit={saveEdit} className="space-y-2">
                   <div>
                     <label className="block">Name</label>
@@ -165,7 +170,6 @@ export default function BusinessStoresPage() {
                     </button>
                   </div>
                 </form>
-              </LoadScript>
             ) : (
               <div className="space-y-2">
                 <p className="font-semibold">{store.name}</p>

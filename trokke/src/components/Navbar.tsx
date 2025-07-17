@@ -26,13 +26,13 @@ export default function Navbar() {
   }
 
   return (
-    <header className="fixed top-0 left-0 right-0 h-12 bg-gray-100 flex items-center px-4 shadow z-10 ml-60">
+    <header className="fixed top-0 left-0 right-0 h-16 bg-gray-100 flex items-center px-6 shadow z-10 ml-60 text-black">
       <nav className="flex gap-4 flex-1">
         {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}
-            className={`py-2 px-3 rounded hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : ''}`}
+            className={`py-3 px-5 rounded text-lg hover:bg-gray-200 ${pathname === item.href ? 'bg-blue-600 text-white' : 'text-black'}`}
           >
             {item.label}
           </Link>
@@ -40,7 +40,7 @@ export default function Navbar() {
       </nav>
       <button
         onClick={handleLogout}
-        className="p-2 bg-red-500 text-white rounded"
+        className="py-3 px-5 bg-red-500 text-white rounded text-lg"
       >
         Logout
       </button>
