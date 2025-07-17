@@ -1,16 +1,21 @@
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
+import type { Metadata } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import { AuthProvider } from '../components/AuthContext'; // Import the AuthProvider
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ['latin'] });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+export const metadata: Metadata = {
+  title: 'Smart Fleet & Logistics Hub',
+  description: 'Real-time logistics hub for fleet management.',
+};
 
+/**
+ * This is the root layout for the entire application.
+ * We wrap the application's children with the AuthProvider here
+ * to make the authentication state (user, role, etc.) available
+ * to all components.
+ */
 export default function RootLayout({
   children,
 }: {
@@ -18,8 +23,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
+      <body className={inter.className}>
+        <AuthProvider>{children}</AuthProvider>
       </body>
     </html>
   );

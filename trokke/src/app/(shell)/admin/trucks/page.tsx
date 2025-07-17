@@ -1,222 +1,174 @@
-'use client'
+"use client";
+import { supabase } from "../../../../lib/supabaseClient";
+import { useEffect, useState } from "react";
 
-import { useEffect, useState } from 'react'
-import supabase from '@/lib/supabaseClient'
-
+// Interface for the truck data
 interface Truck {
-  id: number
-  license_plate: string
-  make: string
-  model: string
-  year: number
-  assigned_worker_id?: string | null
+  id: number;
+  license_plate: string;
+  make: string;
+  model: string;
+  year: number;
 }
 
-interface Worker {
-  id: string
-  profiles: { full_name: string } | null
-}
+const TrucksPage = () => {
+  const [trucks, setTrucks] = useState<Truck[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default function AdminTrucksPage() {
-  const [trucks, setTrucks] = useState<Truck[]>([])
-  const [workers, setWorkers] = useState<Worker[]>([])
-
-  const [plate, setPlate] = useState('')
-  const [make, setMake] = useState('')
-  const [model, setModel] = useState('')
-  const [year, setYear] = useState('')
-
-  const [editingId, setEditingId] = useState<number | null>(null)
-  const [editPlate, setEditPlate] = useState('')
-  const [editMake, setEditMake] = useState('')
-  const [editModel, setEditModel] = useState('')
-  const [editYear, setEditYear] = useState('')
-  const [editWorker, setEditWorker] = useState('')
-
-  const fetchTrucks = async () => {
-    const { data } = await supabase.from('trucks').select('*').order('id')
-    if (data) setTrucks(data as Truck[])
-  }
-
-  const fetchWorkers = async () => {
-    const { data } = await supabase
-      .from('workers')
-      .select('id, profiles(full_name)')
-      .order('id')
-    if (data) setWorkers(data as Worker[])
-  }
+  // Form state for creating a new truck
+  const [newTruck, setNewTruck] = useState({
+    license_plate: "",
+    make: "",
+    model: "",
+    year: new Date().getFullYear(),
+  });
 
   useEffect(() => {
-    fetchTrucks()
-    fetchWorkers()
-  }, [])
+    const fetchTrucks = async () => {
+      setLoading(true);
+      const { data, error } = await supabase.from("trucks").select("*");
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    await supabase.from('trucks').insert({
-      license_plate: plate,
-      make,
-      model,
-      year: Number(year)
-    })
-    setPlate('')
-    setMake('')
-    setModel('')
-    setYear('')
-    fetchTrucks()
-  }
+      if (error) {
+        setError(error.message);
+        console.error("Error fetching trucks:", error);
+      } else {
+        setTrucks(data || []);
+      }
+      setLoading(false);
+    };
 
-  const startEdit = (truck: Truck) => {
-    setEditingId(truck.id)
-    setEditPlate(truck.license_plate)
-    setEditMake(truck.make)
-    setEditModel(truck.model)
-    setEditYear(String(truck.year))
-    setEditWorker(truck.assigned_worker_id || '')
-  }
+    fetchTrucks();
+  }, []);
 
-  const cancelEdit = () => {
-    setEditingId(null)
-  }
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setNewTruck((prev) => ({
+      ...prev,
+      [name]: name === 'year' ? parseInt(value, 10) : value,
+    }));
+  };
 
-  const saveEdit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (editingId === null) return
-    await supabase
-      .from('trucks')
-      .update({
-        license_plate: editPlate,
-        make: editMake,
-        model: editModel,
-        year: Number(editYear),
-        assigned_worker_id: editWorker || null
-      })
-      .eq('id', editingId)
-    setEditingId(null)
-    fetchTrucks()
-  }
+  const handleCreateTruck = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setError(null);
 
-  const handleDelete = async (id: number) => {
-    await supabase.from('trucks').delete().eq('id', id)
-    fetchTrucks()
+    const { data, error } = await supabase
+      .from("trucks")
+      .insert([newTruck])
+      .select();
+
+    if (error) {
+      setError(error.message);
+      console.error("Error creating truck:", error);
+    } else if (data) {
+      setTrucks((prev) => [...prev, ...data]);
+      // Reset form
+      setNewTruck({
+        license_plate: "",
+        make: "",
+        model: "",
+        year: new Date().getFullYear(),
+      });
+    }
+  };
+
+  if (loading) {
+    return <div className="p-6">Loading trucks...</div>;
   }
 
   return (
-    <div className="p-4 space-y-6">
-      <h1 className="text-2xl font-bold">Trucks</h1>
+    <div className="p-6">
+      <h1 className="text-2xl font-semibold text-gray-900 mb-4">
+        Manage Trucks
+      </h1>
 
-      <form onSubmit={handleCreate} className="space-y-2">
-        <input
-          className="border p-2 block w-full"
-          placeholder="License Plate"
-          value={plate}
-          onChange={(e) => setPlate(e.target.value)}
-          required
-        />
-        <input
-          className="border p-2 block w-full"
-          placeholder="Make"
-          value={make}
-          onChange={(e) => setMake(e.target.value)}
-          required
-        />
-        <input
-          className="border p-2 block w-full"
-          placeholder="Model"
-          value={model}
-          onChange={(e) => setModel(e.target.value)}
-          required
-        />
-        <input
-          className="border p-2 block w-full"
-          placeholder="Year"
-          value={year}
-          onChange={(e) => setYear(e.target.value)}
-          required
-        />
-        <button className="bg-blue-600 text-white px-4 py-2" type="submit">
-          Add Truck
-        </button>
-      </form>
+      {/* Form to create a new truck */}
+      <div className="mb-8 bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Add a New Truck</h2>
+        <form onSubmit={handleCreateTruck} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <input
+            type="text"
+            name="license_plate"
+            placeholder="License Plate"
+            value={newTruck.license_plate}
+            onChange={handleInputChange}
+            required
+            className="p-2 border rounded text-gray-900 placeholder-gray-600"
+          />
+          <input
+            type="text"
+            name="make"
+            placeholder="Make"
+            value={newTruck.make}
+            onChange={handleInputChange}
+            required
+            className="p-2 border rounded text-gray-900 placeholder-gray-600"
+          />
+          <input
+            type="text"
+            name="model"
+            placeholder="Model"
+            value={newTruck.model}
+            onChange={handleInputChange}
+            required
+            className="p-2 border rounded text-gray-900 placeholder-gray-600"
+          />
+          <input
+            type="number"
+            name="year"
+            placeholder="Year"
+            value={newTruck.year}
+            onChange={handleInputChange}
+            required
+            className="p-2 border rounded text-gray-900 placeholder-gray-600"
+          />
+          <button
+            type="submit"
+            className="md:col-span-2 bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+          >
+            Create Truck
+          </button>
+        </form>
+        {error && <p className="text-red-500 mt-4">{error}</p>}
+      </div>
 
-      <ul className="space-y-4">
-        {trucks.map((truck) => (
-          <li key={truck.id} className="border p-4">
-            {editingId === truck.id ? (
-              <form onSubmit={saveEdit} className="space-y-2">
-                <input
-                  className="border p-2 w-full"
-                  value={editPlate}
-                  onChange={(e) => setEditPlate(e.target.value)}
-                  required
-                />
-                <input
-                  className="border p-2 w-full"
-                  value={editMake}
-                  onChange={(e) => setEditMake(e.target.value)}
-                  required
-                />
-                <input
-                  className="border p-2 w-full"
-                  value={editModel}
-                  onChange={(e) => setEditModel(e.target.value)}
-                  required
-                />
-                <input
-                  className="border p-2 w-full"
-                  value={editYear}
-                  onChange={(e) => setEditYear(e.target.value)}
-                  required
-                />
-                <select
-                  className="border p-2 w-full"
-                  value={editWorker}
-                  onChange={(e) => setEditWorker(e.target.value)}
-                >
-                  <option value="">Unassigned</option>
-                  {workers.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.profiles?.full_name || 'Unnamed'}
-                    </option>
-                  ))}
-                </select>
-                <div className="space-x-2">
-                  <button className="bg-green-600 text-white px-3 py-1" type="submit">
-                    Save
-                  </button>
-                  <button
-                    className="bg-gray-400 text-white px-3 py-1"
-                    type="button"
-                    onClick={cancelEdit}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            ) : (
-              <div className="space-y-2">
-                <p className="font-semibold">
-                  {truck.license_plate} - {truck.make} {truck.model} ({truck.year})
-                </p>
-                <div className="space-x-2">
-                  <button
-                    className="bg-yellow-500 text-white px-3 py-1"
-                    onClick={() => startEdit(truck)}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    className="bg-red-600 text-white px-3 py-1"
-                    onClick={() => handleDelete(truck.id)}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+      {/* Table of existing trucks */}
+      <div className="bg-white p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Current Fleet</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">License Plate</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Make</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Model</th>
+                <th className="px-6 py-3 text-left text-xs font-bold text-gray-900 uppercase tracking-wider">Year</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {trucks.length > 0 ? (
+                trucks.map((truck) => (
+                  <tr key={truck.id}>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{truck.license_plate}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{truck.make}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{truck.model}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-gray-900">{truck.year}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500">
+                    No trucks found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
-  )
-}
+  );
+};
+
+export default TrucksPage;
