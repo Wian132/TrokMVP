@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import Link from 'next/link';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,11 +40,11 @@ export default function LoginPage() {
   return (
     <div className="flex items-center justify-center min-h-screen bg-gray-100">
       <div className="p-8 bg-white rounded-lg shadow-md w-full max-w-md">
-        <h2 className="text-2xl font-bold mb-6 text-center">Login</h2>
+        <h2 className="text-2xl font-bold mb-6 text-center text-gray-900">Login</h2>
         {error && <p className="text-red-500 text-center mb-4">{error}</p>}
         <form onSubmit={handleLogin}>
           <div className="mb-4">
-            <label className="block text-gray-700">Email</label>
+            <label className="block text-gray-700 font-semibold">Email</label>
             <input
               type="email"
               value={email}
@@ -53,7 +54,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="mb-6">
-            <label className="block text-gray-700">Password</label>
+            <label className="block text-gray-700 font-semibold">Password</label>
             <input
               type="password"
               value={password}
@@ -70,6 +71,12 @@ export default function LoginPage() {
             {loading ? 'Logging in...' : 'Login'}
           </button>
         </form>
+        <p className="text-sm text-center text-gray-600 mt-6">
+          Don&apos;t have an account?{' '}
+          <Link href="/signup" className="text-blue-600 hover:underline font-semibold">
+            Sign Up
+          </Link>
+        </p>
       </div>
     </div>
   );
