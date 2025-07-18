@@ -11,7 +11,7 @@ type BusinessStore = Database['public']['Tables']['business_stores']['Row'];
 // Define the libraries to be loaded by the Google Maps API
 const libraries: ('places')[] = ['places'];
 
-export default function BusinessStoresPage() {
+export default function MyShopsAdminPage() {
   const supabase = createClient();
   const [stores, setStores] = useState<BusinessStore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,13 +95,13 @@ export default function BusinessStoresPage() {
 
   return (
     <div className="p-6">
-      <h1 className="text-2xl font-semibold text-gray-900 mb-4">Manage Business Stores</h1>
+      <h1 className="text-2xl font-semibold text-gray-900 mb-4">My Shops</h1>
       <div className="mb-8 bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Add a New Store</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Add a New Shop</h2>
         <form onSubmit={handleCreateStore} className="space-y-4">
           <input
             type="text"
-            placeholder="Store Name"
+            placeholder="Shop Name"
             value={newStoreName}
             onChange={(e) => setNewStoreName(e.target.value)}
             required
@@ -116,13 +116,13 @@ export default function BusinessStoresPage() {
             />
           </Autocomplete>
           <button type="submit" className="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
-            Create Store
+            Create Shop
           </button>
         </form>
         {error && <p className="text-red-500 mt-4">{error}</p>}
       </div>
       <div className="bg-white p-6 rounded-lg shadow">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Our Stores</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">All Shops</h2>
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">

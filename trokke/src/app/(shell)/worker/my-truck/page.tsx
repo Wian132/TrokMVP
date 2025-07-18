@@ -1,58 +1,62 @@
 import { createClient } from '@/utils/supabase/server';
-
-type Truck = {
-  id: number;
-  license_plate: string;
-  make: string | null;
-  model: string | null;
-  year: number | null;
-  status: string;
-};
+import { redirect } from 'next/navigation';
 
 export default async function MyTruckPage() {
-  // We now MUST await the createClient() function call.
+  // Add the 'await' keyword here to correctly initialize the client
   const supabase = await createClient();
   
   const { data: { user } } = await supabase.auth.getUser();
 
   if (!user) {
-    return <div>You must be logged in to see your assigned truck.</div>
+    redirect('/login');
   }
 
-  const { data: worker, error: workerError } = await supabase
+  const { data: worker } = await supabase
     .from('workers')
     .select('id')
     .eq('profile_id', user.id)
     .single();
 
-  if (workerError || !worker) {
-      return <div>Could not find a worker profile for the current user.</div>
+  if (!worker) {
+    return (
+        <div className="p-6">
+            <h1 className="text-2xl font-bold text-gray-900 mb-4">My Assigned Truck</h1>
+            <div className="p-6 bg-white rounded-lg shadow">
+                <p className="text-lg text-gray-700">Could not find a worker profile for your account.</p>
+            </div>
+        </div>
+    );
   }
 
-  const { data: truck, error: truckError } = await supabase
+  const { data: truck } = await supabase
     .from('trucks')
     .select('*')
     .eq('assigned_worker_id', worker.id)
     .single();
 
-  if (truckError) {
-    return <div className="text-orange-500">No truck is currently assigned to you.</div>;
-  }
-
-  const assignedTruck = truck as Truck;
-
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">My Assigned Truck</h1>
-      {assignedTruck ? (
-        <div className="p-4 bg-white rounded-lg shadow">
-            <p><span className="font-semibold">Vehicle:</span> {assignedTruck.make} {assignedTruck.model} ({assignedTruck.year})</p>
-            <p><span className="font-semibold">License Plate:</span> {assignedTruck.license_plate}</p>
-            <p><span className="font-semibold">Status:</span> <span className="font-medium capitalize">{assignedTruck.status}</span></p>
-        </div>
-      ) : (
-        <p>No truck found.</p>
-      )}
+    <div className="p-6">
+      <h1 className="text-2xl font-bold text-gray-900 mb-4">My Assigned Truck</h1>
+      <div className="p-6 bg-white rounded-lg shadow">
+        {truck ? (
+            <div className="space-y-4">
+                <div>
+                    <label className="text-sm font-medium text-gray-500">Vehicle</label>
+                    <p className="text-xl font-bold text-black">{truck.make} {truck.model} ({truck.year})</p>
+                </div>
+                <div>
+                    <label className="text-sm font-medium text-gray-500">License Plate</label>
+                    <p className="text-xl font-bold text-black">{truck.license_plate}</p>
+                </div>
+                <div>
+                    <label className="text-sm font-medium text-gray-500">Status</label>
+                    <p className="text-xl font-bold text-black capitalize">{truck.status}</p>
+                </div>
+            </div>
+        ) : (
+            <p className="text-lg text-orange-500 font-semibold">No truck is currently assigned to you.</p>
+        )}
+      </div>
     </div>
   );
 }
