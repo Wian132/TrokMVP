@@ -1,24 +1,33 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
+import { AuthProvider } from "@/components/AuthContext";
+import { createClient } from "@/utils/supabase/server";
+import { ReactNode } from "react";
+import Script from 'next/script'; // Import the Next.js Script component
 
-const inter = Inter({ subsets: ["latin"] });
+export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Smart Fleet & Logistics Hub",
-  description: "Real-time logistics hub for fleet and store management.",
-};
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
-  // The root layout is now clean. It does not contain any auth logic or providers.
-  // This ensures that public pages like /login are not wrapped in an auth context.
+}: {
+  children: ReactNode;
+}) {
+  const supabase = await createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  // Construct the Google Maps script URL with your API key
+  const googleMapsUrl = `https://maps.googleapis.com/maps/api/js?key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}&libraries=places`;
+
   return (
     <html lang="en">
-      <body className={inter.className}>{children}</body>
+      <body>
+        <AuthProvider serverSession={session}>
+          {children}
+        </AuthProvider>
+        {/* Load the Google Maps script globally */}
+        <Script src={googleMapsUrl} strategy="beforeInteractive" />
+      </body>
     </html>
   );
 }
