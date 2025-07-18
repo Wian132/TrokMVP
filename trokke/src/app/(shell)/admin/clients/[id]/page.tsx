@@ -7,8 +7,6 @@ import { useJsApiLoader, Autocomplete } from '@react-google-maps/api';
 import { type Database } from '@/types/supabase';
 
 type ClientStore = Database['public']['Tables']['client_stores']['Row'];
-// This type represents the shape of the data returned by the query.
-// Since the relationship is one-to-one (.single()), profiles will be an object.
 type ClientRecordWithProfile = { id: number, profiles: { full_name: string | null } | null };
 
 const libraries: ('places')[] = ['places'];
@@ -16,7 +14,7 @@ const libraries: ('places')[] = ['places'];
 export default function ClientStoresPage() {
   const supabase = createClient();
   const params = useParams();
-  const profileId = params.id as string;
+  const clientId = params.id as string; // This is the integer ID from the URL
 
   const [stores, setStores] = useState<ClientStore[]>([]);
   const [clientName, setClientName] = useState("");
@@ -33,28 +31,28 @@ export default function ClientStoresPage() {
   });
 
   const fetchClientData = useCallback(async () => {
-    if (!profileId) return;
+    if (!clientId) return;
     setLoading(true);
     setError(null);
     try {
+      // Corrected Query: Fetch the client by its integer ID
       const { data: clientRecord, error: clientError } = await supabase
         .from("clients")
         .select(`id, profiles ( full_name )`)
-        .eq("profile_id", profileId)
+        .eq("id", clientId) // Use the correct 'id' column
         .single();
       
       if (clientError) throw clientError;
       
-      // Using 'as unknown as' to bypass the linter's incorrect type inference.
       const record = clientRecord as unknown as ClientRecordWithProfile;
-      const clientIntegerId = record.id;
       const clientFullName = record.profiles?.full_name;
       setClientName(clientFullName || "Client");
 
+      // Fetch stores using the same client integer ID
       const { data: storesData, error: storesError } = await supabase
         .from("client_stores")
         .select("*")
-        .eq("client_id", clientIntegerId);
+        .eq("client_id", clientId);
 
       if (storesError) throw storesError;
       setStores(storesData || []);
@@ -64,7 +62,7 @@ export default function ClientStoresPage() {
     } finally {
       setLoading(false);
     }
-  }, [profileId, supabase]);
+  }, [clientId, supabase]);
 
   useEffect(() => {
     fetchClientData();
@@ -95,18 +93,12 @@ export default function ClientStoresPage() {
     }
     setError(null);
 
-    const { data: clientRecord } = await supabase.from("clients").select("id").eq("profile_id", profileId).single();
-    if (!clientRecord) {
-      setError("Could not find client to add site to.");
-      return;
-    }
-
     const locationString = `POINT(${newSiteLocation.lng} ${newSiteLocation.lat})`;
 
     const { error: insertError } = await supabase
       .from('client_stores')
       .insert({
-        client_id: clientRecord.id,
+        client_id: parseInt(clientId, 10), // Use the ID from the URL
         name: newSiteName,
         address: newSiteLocation.address,
         location: locationString,

@@ -1,75 +1,67 @@
-// src/middleware.ts
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
+import { NextResponse, type NextRequest } from 'next/server';
+import { createClient } from '@/utils/supabase/middleware';
 
+// This function can be marked `async` if using `await` inside
 export async function middleware(request: NextRequest) {
-  let response = NextResponse.next({
-    request: {
-      headers: request.headers,
-    },
-  })
+  const { supabase, response } = createClient(request);
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: CookieOptions) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
+  // Refresh session if expired - required for server components
+  const { data: { session } } = await supabase.auth.getSession();
+
+  // --- Get user and role directly from the database for accuracy ---
+  let userRole: string | null = null;
+  if (session) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
+    if (profile) {
+      userRole = profile.role;
     }
-  )
+  }
 
-  // refreshing the session cookie
-  await supabase.auth.getSession()
+  const { pathname } = request.nextUrl;
 
-  return response
+  // --- Redirect logic based on role and path ---
+
+  // If a non-admin tries to access an admin route
+  if (pathname.startsWith('/admin') && userRole !== 'admin') {
+    console.log(`Redirecting non-admin from ${pathname}`);
+    // Redirect them to their likely dashboard or a login page
+    const redirectUrl = userRole === 'client' ? '/client/dashboard' : userRole === 'worker' ? '/worker/dashboard' : '/login';
+    return NextResponse.redirect(new URL(redirectUrl, request.url));
+  }
+
+  // If a non-client tries to access a client route
+  if (pathname.startsWith('/client') && userRole !== 'client') {
+    console.log(`Redirecting non-client from ${pathname}`);
+    const redirectUrl = userRole === 'admin' ? '/admin/dashboard' : userRole === 'worker' ? '/worker/dashboard' : '/login';
+    return NextResponse.redirect(new URL(redirectUrl, request.url));
+  }
+
+  // If a non-worker tries to access a worker route
+  if (pathname.startsWith('/worker') && userRole !== 'worker') {
+    console.log(`Redirecting non-worker from ${pathname}`);
+    const redirectUrl = userRole === 'admin' ? '/admin/dashboard' : userRole === 'client' ? '/client/dashboard' : '/login';
+    return NextResponse.redirect(new URL(redirectUrl, request.url));
+  }
+
+  return response;
 }
 
+// See "Matching Paths" below to learn more
 export const config = {
   matcher: [
     /*
      * Match all request paths except for the ones starting with:
+     * - api (API routes)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
+     * - login
+     * - signup
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!api|_next/static|_next/image|favicon.ico|login|signup).*)',
   ],
-}
+};

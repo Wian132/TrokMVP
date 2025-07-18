@@ -1,15 +1,24 @@
 'use client';
 
-import { useEffect, useState, useCallback }from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { type Database } from '@/types/supabase';
-import { UserPlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import { UserPlusIcon, PencilIcon, TrashIcon, TruckIcon } from '@heroicons/react/24/outline';
 
-type WorkerProfile = Database['public']['Tables']['profiles']['Row'];
+type WorkerProfile = Database['public']['Tables']['profiles']['Row'] & {
+  workers: {
+    id: number;
+    trucks: {
+      license_plate: string;
+    } | null;
+  } | null;
+};
+type Truck = Database['public']['Tables']['trucks']['Row'];
 
 export default function WorkersPage() {
   const supabase = createClient();
   const [workers, setWorkers] = useState<WorkerProfile[]>([]);
+  const [trucks, setTrucks] = useState<Truck[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,7 +26,8 @@ export default function WorkersPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+
   // State for form data
   const [newWorker, setNewWorker] = useState({
     fullName: "",
@@ -27,30 +37,56 @@ export default function WorkersPage() {
   });
   const [editingWorker, setEditingWorker] = useState<WorkerProfile | null>(null);
   const [deletingWorker, setDeletingWorker] = useState<WorkerProfile | null>(null);
+  const [assigningWorker, setAssigningWorker] = useState<WorkerProfile | null>(null);
+  const [selectedTruckId, setSelectedTruckId] = useState<string>('');
 
   const fetchWorkers = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("*")
+      .select(`
+        *,
+        workers (
+          id,
+          trucks (
+            license_plate
+          )
+        )
+      `)
       .eq("role", "worker");
 
     if (error) {
       setError(error.message);
     } else {
-      setWorkers(data || []);
+      setWorkers(data as WorkerProfile[] || []);
     }
     setLoading(false);
+  }, [supabase]);
+
+  const fetchAvailableTrucks = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('trucks')
+      .select('*')
+      .is('assigned_worker_id', null)
+      .eq('status', 'inactive');
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setTrucks(data || []);
+    }
   }, [supabase]);
 
   useEffect(() => {
     fetchWorkers();
   }, [fetchWorkers]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     if (isEditModalOpen && editingWorker) {
         setEditingWorker({ ...editingWorker, [name]: value });
+    } else if (isAssignModalOpen) {
+        setSelectedTruckId(value);
     } else {
         setNewWorker((prev) => ({ ...prev, [name]: value }));
     }
@@ -62,26 +98,27 @@ export default function WorkersPage() {
     e.preventDefault();
     setError(null);
 
-    // 1. Create the user in Supabase Auth and pass the desired role in the metadata.
-    // The database trigger will handle the rest.
-    const { error: authError } = await supabase.auth.signUp({
-      email: newWorker.email,
-      password: newWorker.password,
-      options: {
-        data: {
-          role: 'worker', // Pass the role here
-          full_name: newWorker.fullName, // Pass other data needed by the trigger
-          contact_phone: newWorker.contactPhone
-        }
-      }
+    const response = await fetch('/api/admin/create-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: newWorker.email,
+        password: newWorker.password,
+        role: 'worker',
+        fullName: newWorker.fullName,
+        contactPhone: newWorker.contactPhone,
+      }),
     });
 
-    if (authError) {
-      setError(authError.message);
+    const result = await response.json();
+
+    if (!response.ok) {
+      setError(result.error || 'An unknown error occurred.');
       return;
     }
 
-    // Since the trigger handles profile creation, we just need to refresh the list.
     await fetchWorkers();
     closeCreateModal();
   };
@@ -109,8 +146,6 @@ export default function WorkersPage() {
   const handleDeleteWorker = async () => {
     if (!deletingWorker) return;
 
-    // 1. Delete the worker's profile from the 'profiles' table.
-    // RLS should cascade delete the entry in the 'workers' table.
     const { error: profileError } = await supabase
         .from('profiles')
         .delete()
@@ -122,7 +157,6 @@ export default function WorkersPage() {
         return;
     }
 
-    // 2. Call the Supabase Edge Function to delete the user from auth.
     const { error: functionError } = await supabase.functions.invoke('delete-user', {
         body: { userId: deletingWorker.id },
     });
@@ -134,6 +168,36 @@ export default function WorkersPage() {
     await fetchWorkers();
     closeDeleteModal();
   };
+
+  const handleAssignTruck = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!assigningWorker || !selectedTruckId) {
+        setError("Please select a worker and a truck.");
+        return;
+    }
+
+    const workerRecordId = assigningWorker.workers?.id;
+    if (!workerRecordId) {
+        setError("Assignment failed: The selected worker is missing a valid record in the system. Please check the database triggers or re-create the worker.");
+        return;
+    }
+
+    const { error: truckUpdateError } = await supabase
+        .from('trucks')
+        .update({
+            assigned_worker_id: workerRecordId,
+            status: 'active'
+        })
+        .eq('id', selectedTruckId);
+
+    if (truckUpdateError) {
+        setError(`Failed to assign truck: ${truckUpdateError.message}`);
+    } else {
+        await fetchWorkers();
+        closeAssignModal();
+    }
+  };
+
 
   // --- Modal Control Functions ---
   const openCreateModal = () => {
@@ -154,6 +218,15 @@ export default function WorkersPage() {
   };
   const closeDeleteModal = () => setIsDeleteModalOpen(false);
 
+  const openAssignModal = (worker: WorkerProfile) => {
+    setAssigningWorker(worker);
+    fetchAvailableTrucks();
+    setSelectedTruckId('');
+    setIsAssignModalOpen(true);
+  };
+  const closeAssignModal = () => setIsAssignModalOpen(false);
+
+
   if (loading) return <div className="p-6 font-bold text-center">Loading workers...</div>;
 
   return (
@@ -173,6 +246,7 @@ export default function WorkersPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider">Name</th>
                 <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider">Contact Phone</th>
+                <th className="px-6 py-3 text-left text-sm font-bold text-gray-900 uppercase tracking-wider">Assigned Truck</th>
                 <th className="px-6 py-3 text-right text-sm font-bold text-gray-900 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
@@ -182,11 +256,26 @@ export default function WorkersPage() {
                   <tr key={worker.id}>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-800">{worker.full_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{worker.contact_phone || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">
+                      {worker.workers?.trucks?.license_plate || <span className="text-gray-400">Unassigned</span>}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
-                        <button onClick={() => openEditModal(worker)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100">
+                        <button
+                          onClick={() => openAssignModal(worker)}
+                          disabled={!worker.workers}
+                          className={`p-2 rounded-full ${
+                            !worker.workers
+                              ? 'text-gray-300 cursor-not-allowed'
+                              : 'text-green-600 hover:text-green-900 hover:bg-green-100'
+                          }`}
+                          title={!worker.workers ? "Cannot assign: Worker record is missing" : "Assign Truck"}
+                        >
+                            <TruckIcon className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => openEditModal(worker)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100" title="Edit Worker">
                             <PencilIcon className="h-5 w-5" />
                         </button>
-                        <button onClick={() => openDeleteModal(worker)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100">
+                        <button onClick={() => openDeleteModal(worker)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100" title="Delete Worker">
                             <TrashIcon className="h-5 w-5" />
                         </button>
                     </td>
@@ -194,7 +283,7 @@ export default function WorkersPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={3} className="px-6 py-4 text-center text-gray-500 font-bold">No workers found.</td>
+                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500 font-bold">No workers found.</td>
                 </tr>
               )}
             </tbody>
@@ -247,6 +336,34 @@ export default function WorkersPage() {
                 <button onClick={handleDeleteWorker} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {isAssignModalOpen && assigningWorker && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
+                <h2 className="text-xl font-bold mb-4 text-gray-900">Assign Truck to {assigningWorker.full_name}</h2>
+                <form onSubmit={handleAssignTruck} className="space-y-4">
+                    <select
+                        name="truckId"
+                        value={selectedTruckId}
+                        onChange={handleInputChange}
+                        required
+                        className="w-full p-2 border rounded font-semibold text-gray-900"
+                    >
+                        <option value="" disabled>Select an available truck</option>
+                        {trucks.map(truck => (
+                            <option key={truck.id} value={truck.id}>
+                                {truck.license_plate} ({truck.make} {truck.model})
+                            </option>
+                        ))}
+                    </select>
+                    <div className="flex justify-end space-x-4">
+                        <button type="button" onClick={closeAssignModal} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Cancel</button>
+                        <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Assign Truck</button>
+                    </div>
+                </form>
+            </div>
         </div>
       )}
     </div>

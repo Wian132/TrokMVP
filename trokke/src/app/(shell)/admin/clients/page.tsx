@@ -2,26 +2,20 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import Link from 'next/link';
 import { type Database } from '@/types/supabase';
 import { UserPlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
 
-// Define a more specific type for the data we fetch, including the nested company_name
-type ClientWithCompany = Database['public']['Tables']['profiles']['Row'] & {
-  clients: { company_name: string | null }[] | null;
-};
-
-// Define a simpler type for our state to make it easier to work with
-type ClientState = {
-  id: string;
-  full_name: string | null;
-  contact_phone: string | null;
-  company_name: string | null;
+type ClientProfile = Database['public']['Tables']['profiles']['Row'] & {
+  clients: {
+    id: number;
+    company_name: string | null;
+  } | null;
 };
 
 export default function ClientsPage() {
   const supabase = createClient();
-  const [clients, setClients] = useState<ClientState[]>([]);
+  const [clients, setClients] = useState<ClientProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,27 +32,26 @@ export default function ClientsPage() {
     contactPhone: "",
     companyName: "",
   });
-  const [editingClient, setEditingClient] = useState<ClientState | null>(null);
-  const [deletingClient, setDeletingClient] = useState<ClientState | null>(null);
+  const [editingClient, setEditingClient] = useState<ClientProfile | null>(null);
+  const [deletingClient, setDeletingClient] = useState<ClientProfile | null>(null);
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
       .from("profiles")
-      .select("*, clients ( company_name )")
+      .select(`
+        *,
+        clients (
+          id,
+          company_name
+        )
+      `)
       .eq("role", "client");
 
     if (error) {
       setError(error.message);
     } else {
-      // Transform the data to our simpler ClientState type
-      const transformedData = (data as ClientWithCompany[]).map(profile => ({
-        id: profile.id,
-        full_name: profile.full_name,
-        contact_phone: profile.contact_phone,
-        company_name: Array.isArray(profile.clients) && profile.clients.length > 0 ? profile.clients[0].company_name : null,
-      }));
-      setClients(transformedData);
+      setClients(data as ClientProfile[] || []);
     }
     setLoading(false);
   }, [supabase]);
@@ -70,90 +63,96 @@ export default function ClientsPage() {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     if (isEditModalOpen && editingClient) {
-        setEditingClient({ ...editingClient, [name]: value });
+      const updatedClient = { ...editingClient };
+      if (name === 'company_name' && updatedClient.clients) {
+        updatedClient.clients.company_name = value;
+      } else if (name === 'full_name') {
+        updatedClient.full_name = value;
+      } else if (name === 'contact_phone') {
+        updatedClient.contact_phone = value;
+      }
+      setEditingClient(updatedClient);
     } else {
-        setNewClient((prev) => ({ ...prev, [name]: value }));
+      setNewClient((prev) => ({ ...prev, [name]: value }));
     }
   };
-
-  // --- CRUD Handlers ---
 
   const handleCreateClient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
-    // Create the user in Supabase Auth, passing all data in the metadata
-    const { error: authError } = await supabase.auth.signUp({
-      email: newClient.email,
-      password: newClient.password,
-      options: {
-        data: {
-          role: 'client',
-          full_name: newClient.fullName,
-          contact_phone: newClient.contactPhone,
-          company_name: newClient.companyName,
+    const response = await fetch('/api/admin/create-user', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
         },
-      },
+        body: JSON.stringify({
+            email: newClient.email,
+            password: newClient.password,
+            role: 'client',
+            fullName: newClient.fullName,
+            contactPhone: newClient.contactPhone,
+            // We can pass extra data for the trigger to use
+            companyName: newClient.companyName,
+        }),
     });
 
-    if (authError) {
-      setError(authError.message);
-      return;
+    const result = await response.json();
+
+    if (!response.ok) {
+        setError(result.error || 'An unknown error occurred.');
+        return;
     }
 
+    // Since the trigger handles profile creation, we just need to refresh the list.
     await fetchClients();
     closeCreateModal();
   };
-  
+
   const handleUpdateClient = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!editingClient) return;
 
-    // We need to update two tables in parallel
-    const [profileUpdate, clientUpdate] = await Promise.all([
-        supabase
-            .from('profiles')
-            .update({
-                full_name: editingClient.full_name,
-                contact_phone: editingClient.contact_phone,
-            })
-            .eq('id', editingClient.id),
-        supabase
-            .from('clients')
-            .update({ company_name: editingClient.company_name })
-            .eq('profile_id', editingClient.id)
-    ]);
+    // Update profile table
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        full_name: editingClient.full_name,
+        contact_phone: editingClient.contact_phone,
+      })
+      .eq('id', editingClient.id);
 
-    if (profileUpdate.error || clientUpdate.error) {
-        setError(profileUpdate.error?.message || clientUpdate.error?.message || "An error occurred.");
-    } else {
-        await fetchClients();
-        closeEditModal();
+    if (profileError) {
+      setError(profileError.message);
+      return;
     }
+
+    // Update clients table
+    if (editingClient.clients) {
+        const { error: clientError } = await supabase
+            .from('clients')
+            .update({ company_name: editingClient.clients.company_name })
+            .eq('id', editingClient.clients.id);
+        
+        if (clientError) {
+            setError(clientError.message);
+            return;
+        }
+    }
+    
+    await fetchClients();
+    closeEditModal();
   };
 
   const handleDeleteClient = async () => {
     if (!deletingClient) return;
 
-    // Delete profile (which should cascade to 'clients' table)
-    const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', deletingClient.id);
-
-    if (profileError) {
-        setError(`Failed to delete profile: ${profileError.message}`);
-        closeDeleteModal();
-        return;
-    }
-
-    // Call Edge Function to delete from auth
     const { error: functionError } = await supabase.functions.invoke('delete-user', {
         body: { userId: deletingClient.id },
     });
 
     if (functionError) {
-        setError(`Failed to delete auth user: ${functionError.message}. Please do it manually.`);
+        setError(`Failed to delete user: ${functionError.message}. Please do it manually.`);
     }
 
     await fetchClients();
@@ -167,18 +166,17 @@ export default function ClientsPage() {
   };
   const closeCreateModal = () => setIsCreateModalOpen(false);
 
-  const openEditModal = (client: ClientState) => {
+  const openEditModal = (client: ClientProfile) => {
     setEditingClient(client);
     setIsEditModalOpen(true);
   };
   const closeEditModal = () => setIsEditModalOpen(false);
 
-  const openDeleteModal = (client: ClientState) => {
+  const openDeleteModal = (client: ClientProfile) => {
     setDeletingClient(client);
     setIsDeleteModalOpen(true);
   };
   const closeDeleteModal = () => setIsDeleteModalOpen(false);
-
 
   if (loading) return <div className="p-6 font-bold text-center">Loading clients...</div>;
 
@@ -187,8 +185,8 @@ export default function ClientsPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Manage Clients</h1>
         <button onClick={openCreateModal} className="flex items-center bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 font-bold">
-            <UserPlusIcon className="h-5 w-5 mr-2" />
-            Add Client
+          <UserPlusIcon className="h-5 w-5 mr-2" />
+          Add Client
         </button>
       </div>
       {error && <p className="text-red-500 bg-red-100 p-3 rounded-md mb-4">{error}</p>}
@@ -207,36 +205,48 @@ export default function ClientsPage() {
               {clients.length > 0 ? (
                 clients.map((client) => (
                   <tr key={client.id}>
-                    <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-800">{client.full_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{client.company_name || 'N/A'}</td>
+                    <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-800">
+                      <Link href={`/admin/clients/${client.clients?.id}`} className="hover:underline">
+                        {client.full_name}
+                      </Link>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{client.clients?.company_name || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{client.contact_phone || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
-                        <button onClick={() => openEditModal(client)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100"><PencilIcon className="h-5 w-5" /></button>
-                        <button onClick={() => openDeleteModal(client)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100"><TrashIcon className="h-5 w-5" /></button>
-                        <Link href={`/admin/clients/${client.id}`} className="inline-block p-2 text-blue-600 hover:text-blue-900 rounded-full hover:bg-blue-100 font-bold">View Stores</Link>
+                      <button onClick={() => openEditModal(client)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100">
+                        <PencilIcon className="h-5 w-5" />
+                      </button>
+                      <button onClick={() => openDeleteModal(client)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100">
+                        <TrashIcon className="h-5 w-5" />
+                      </button>
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={4} className="px-6 py-4 text-center text-gray-500 font-bold">No clients found.</td></tr>
+                <tr>
+                  <td colSpan={4} className="px-6 py-4 text-center text-gray-500 font-bold">No clients found.</td>
+                </tr>
               )}
             </tbody>
           </table>
         </div>
       </div>
-      
+
       {/* --- Modals --- */}
       {isCreateModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
             <h2 className="text-xl font-bold mb-4 text-gray-900">Add New Client</h2>
             <form onSubmit={handleCreateClient} className="space-y-4">
-              <input type="text" name="fullName" placeholder="Full Name" value={newClient.fullName} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="email" name="email" placeholder="Email" value={newClient.email} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="password" name="password" placeholder="Password" value={newClient.password} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="text" name="contactPhone" placeholder="Contact Phone" value={newClient.contactPhone} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="text" name="companyName" placeholder="Company Name" value={newClient.companyName} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <div className="flex justify-end space-x-4"><button type="button" onClick={closeCreateModal} className="px-4 py-2 bg-gray-300 rounded-md">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md">Create</button></div>
+              <input type="text" name="fullName" placeholder="Full Name" value={newClient.fullName} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="email" name="email" placeholder="Email" value={newClient.email} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="password" name="password" placeholder="Password" value={newClient.password} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="text" name="companyName" placeholder="Company Name" value={newClient.companyName} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="text" name="contactPhone" placeholder="Contact Phone" value={newClient.contactPhone} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <div className="flex justify-end space-x-4">
+                <button type="button" onClick={closeCreateModal} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Create</button>
+              </div>
             </form>
           </div>
         </div>
@@ -247,10 +257,13 @@ export default function ClientsPage() {
           <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
             <h2 className="text-xl font-bold mb-4 text-gray-900">Edit Client</h2>
             <form onSubmit={handleUpdateClient} className="space-y-4">
-              <input type="text" name="full_name" placeholder="Full Name" value={editingClient.full_name || ''} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="text" name="contact_phone" placeholder="Contact Phone" value={editingClient.contact_phone || ''} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <input type="text" name="company_name" placeholder="Company Name" value={editingClient.company_name || ''} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900"/>
-              <div className="flex justify-end space-x-4"><button type="button" onClick={closeEditModal} className="px-4 py-2 bg-gray-300 rounded-md">Cancel</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md">Save Changes</button></div>
+              <input type="text" name="full_name" placeholder="Full Name" value={editingClient.full_name || ''} onChange={handleInputChange} required className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="text" name="company_name" placeholder="Company Name" value={editingClient.clients?.company_name || ''} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <input type="text" name="contact_phone" placeholder="Contact Phone" value={editingClient.contact_phone || ''} onChange={handleInputChange} className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"/>
+              <div className="flex justify-end space-x-4">
+                <button type="button" onClick={closeEditModal} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700">Save Changes</button>
+              </div>
             </form>
           </div>
         </div>
@@ -260,8 +273,11 @@ export default function ClientsPage() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
             <h2 className="text-xl font-bold mb-4 text-gray-900">Confirm Deletion</h2>
-            <p className="text-gray-700">Are you sure you want to delete <span className="font-bold text-gray-900">{deletingClient.full_name}</span>? This is irreversible.</p>
-            <div className="flex justify-end space-x-4 mt-6"><button type="button" onClick={closeDeleteModal} className="px-4 py-2 bg-gray-300 rounded-md">Cancel</button><button onClick={handleDeleteClient} className="px-4 py-2 bg-red-600 text-white rounded-md">Delete</button></div>
+            <p className="text-gray-700">Are you sure you want to delete the client <span className="font-bold text-gray-900">{deletingClient.full_name}</span>? This action is irreversible.</p>
+            <div className="flex justify-end space-x-4 mt-6">
+                <button type="button" onClick={closeDeleteModal} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Cancel</button>
+                <button onClick={handleDeleteClient} className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">Delete</button>
+            </div>
           </div>
         </div>
       )}

@@ -1,14 +1,20 @@
-"use client";
+'use client';
+
+import ClientAnalytics from '@/components/ClientAnalytics';
+import ClientMap from '@/components/ClientMap'; // Corrected import
 
 const ClientDashboardPage = () => {
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
-      <div className="bg-[var(--color-panel-background)] rounded-lg shadow-md p-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6 border-b pb-4">
-          Map View
+    <div className="p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
+      <div>
+        <ClientAnalytics />
+      </div>
+      <div className="bg-white rounded-lg shadow-md p-4">
+        <h1 className="text-2xl font-bold text-gray-900 mb-4 border-b pb-2">
+          Your Store Locations
         </h1>
-        <div className="text-center py-12">
-          <p className="text-gray-600">The map will be displayed here.</p>
+        <div className="h-[60vh]">
+          <ClientMap /> {/* Corrected component */}
         </div>
       </div>
     </div>
