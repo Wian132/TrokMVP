@@ -1,7 +1,7 @@
 'use client';
 
 import WorkerAnalytics from '@/components/WorkerAnalytics';
-import WorkerMap from '@/components/WorkerMap';
+import MapComponent from '@/components/Map'; // Updated import
 
 const WorkerDashboardPage = () => {
   return (
@@ -14,7 +14,7 @@ const WorkerDashboardPage = () => {
           Live Map
         </h1>
         <div className="h-[60vh]">
-          <WorkerMap />
+          <MapComponent /> {/* Updated component */}
         </div>
       </div>
     </div>
