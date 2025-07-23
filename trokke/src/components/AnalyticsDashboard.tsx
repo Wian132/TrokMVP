@@ -20,17 +20,14 @@ const AnalyticsDashboard = () => {
     const fetchCounts = async () => {
       setLoading(true);
 
-      // Define truck statuses to query
       const truckStatuses = ['active', 'inactive', 'under_service', 'decommissioned'];
 
-      // Create an array of promises for all queries
       const queries = [
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'worker'),
         supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'client'),
         supabase.from('trucks').select('id', { count: 'exact', head: true }),
         supabase.from('business_stores').select('id', { count: 'exact', head: true }),
         supabase.from('client_stores').select('id', { count: 'exact', head: true }),
-        // Add a query for each truck status
         ...truckStatuses.map(status =>
           supabase.from('trucks').select('id', { count: 'exact', head: true }).eq('status', status)
         )
@@ -38,7 +35,6 @@ const AnalyticsDashboard = () => {
 
       const results = await Promise.all(queries);
 
-      // Destructure the results
       const [
         workersCount,
         clientsCount,
@@ -48,7 +44,6 @@ const AnalyticsDashboard = () => {
         ...statusCounts
       ] = results;
 
-      // Start with the base metrics
       const newMetrics: Metric[] = [
         { name: 'Amount of Workers', value: workersCount.count ?? 0, icon: UsersIcon },
         { name: 'Amount of Clients', value: clientsCount.count ?? 0, icon: UserGroupIcon },
@@ -57,11 +52,10 @@ const AnalyticsDashboard = () => {
         { name: 'Client Stores', value: clientStoresCount.count ?? 0, icon: BuildingStorefrontIcon },
       ];
 
-      // Conditionally add truck status metrics if their count is > 0
       statusCounts.forEach((statusResult, index) => {
         if (statusResult.count && statusResult.count > 0) {
           const statusName = truckStatuses[index];
-          newMetrics.splice(3, 0, { // Insert after Total Trucks
+          newMetrics.splice(3, 0, {
             name: `${statusName.charAt(0).toUpperCase() + statusName.slice(1).replace('_', ' ')} Trucks`,
             value: statusResult.count,
             icon: TruckIcon,
@@ -78,20 +72,20 @@ const AnalyticsDashboard = () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
+      <div className="flex items-center justify-center h-full p-4">
         <p className="text-gray-600">Loading Analytics...</p>
       </div>
     );
   }
 
   return (
-    <div className="p-4 bg-gray-100 h-full">
-      <h2 className="text-xl font-bold text-gray-800 mb-3">Analytics Overview</h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+    <div className="p-4 bg-gray-100">
+      {/* Responsive Grid: Stacks to 2 columns on small screens, then expands */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-3">
         {metrics.map((metric) => (
-          <div key={metric.name} className="bg-white p-3 rounded-lg shadow-md flex flex-col items-center justify-center">
-            <metric.icon className="h-7 w-7 text-indigo-500 mb-1" />
-            <p className="text-2xl font-bold text-gray-900">{metric.value}</p>
+          <div key={metric.name} className="bg-white p-3 rounded-lg shadow-md flex flex-col items-center justify-center aspect-square">
+            <metric.icon className="h-6 w-6 sm:h-7 sm:w-7 text-indigo-500 mb-1" />
+            <p className="text-xl sm:text-2xl font-bold text-gray-900">{metric.value}</p>
             <p className="text-xs font-medium text-gray-500 text-center">{metric.name}</p>
           </div>
         ))}

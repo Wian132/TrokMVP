@@ -1,10 +1,10 @@
 'use client';
 
 // This layout is nested inside the main (shell)/layout.tsx,
-// which already handles authentication and the main app structure.
-// We can simplify this to just render the children.
+// which already handles authentication and the main app structure (Sidebar, Navbar).
+// Therefore, this component can be simplified to just render its children.
 
-export default function WorkerLayout({
+export default function ClientLayout({
   children,
 }: {
   children: React.ReactNode;

@@ -1,58 +1,81 @@
-import { redirect } from 'next/navigation';
+'use client';
+
+import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
-import { createClient } from '@/utils/supabase/server';
+import { createClient } from '@/utils/supabase/client';
 import { AuthProvider } from '@/components/AuthContext';
+import { useEffect, useState } from 'react';
+import Chatbot from '@/components/Chatbot';
 
-export default async function ShellLayout({
+export default function ShellLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  console.log('\n--- [ShellLayout] Checking authentication state on the server ---');
-  const supabase = await createClient();
+  const [userRole, setUserRole] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSidebarOpen, setSidebarOpen] = useState(false); // State for mobile sidebar
+  const supabase = createClient();
+  const router = useRouter();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
 
-  if (!user) {
-    console.log('[ShellLayout] No authenticated user found. Redirecting to /login.');
-    redirect('/login');
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      
+      if (error || !profile) {
+        console.error('Error fetching profile or profile not found:', error);
+        router.push('/login');
+        return;
+      }
+      setUserRole(profile.role);
+      setIsLoading(false);
+    };
+    checkUser();
+  }, [supabase, router]);
+
+
+  if (isLoading) {
+    return (
+        <div className="flex items-center justify-center min-h-screen bg-gray-100">
+            <p className="text-lg font-semibold">Loading Session...</p>
+        </div>
+    );
   }
-
-  // --- CORRECTED ROLE FETCHING ---
-  // Fetch the user's profile from the 'profiles' table to get the correct role.
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role')
-    .eq('id', user.id)
-    .single();
-
-  // If there's no profile, something is wrong. Log out the user.
-  if (!profile) {
-    console.log('[ShellLayout] Could not find a profile for the user. Redirecting to /login.');
-    redirect('/login');
-  }
-
-  const userRole = profile.role;
-  console.log(`[ShellLayout] User is authenticated. ID: ${user.id}, Role: ${userRole}`);
-  console.log('[ShellLayout] Rendering the protected layout with Sidebar and Navbar.');
 
   return (
-    <AuthProvider serverSession={session}>
-      <div className="flex h-screen bg-gray-100">
-        <Sidebar userRole={userRole} />
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <Navbar />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-gray-200 p-4 sm:p-6 md:p-8">
+    <AuthProvider serverSession={null}>
+      <div className="relative min-h-screen md:flex">
+        {/* Sidebar */}
+        {userRole && (
+            <Sidebar 
+                userRole={userRole} 
+                isSidebarOpen={isSidebarOpen}
+                setSidebarOpen={setSidebarOpen}
+            />
+        )}
+        
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col">
+          <Navbar setSidebarOpen={setSidebarOpen} />
+          <main className="flex-1 overflow-y-auto bg-gray-200 p-4 sm:p-6 md:p-8">
             {children}
           </main>
         </div>
+
+        {/* Chatbot remains fixed */}
+        {userRole && <Chatbot userRole={userRole} />}
       </div>
     </AuthProvider>
   );
