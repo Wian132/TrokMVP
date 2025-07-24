@@ -167,7 +167,7 @@ export default function Chatbot({ userRole }: ChatbotProps) {
   }
 
   return (
-    <div className="fixed bottom-0 right-4 w-96 bg-white rounded-t-lg shadow-2xl flex flex-col z-50" style={{ height: '66vh' }}>
+    <div className="fixed z-50 bg-white shadow-2xl flex flex-col rounded-t-lg bottom-0 right-0 w-full h-[85vh] sm:bottom-0 sm:right-4 sm:w-96 sm:h-[66vh]">
       <div className="flex justify-between items-center p-4 bg-gray-800 text-white rounded-t-lg">
         <h3 className="font-bold">{userRole.charAt(0).toUpperCase() + userRole.slice(1)} Assistant</h3>
         <div className="flex items-center gap-4">
