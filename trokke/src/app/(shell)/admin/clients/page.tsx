@@ -6,6 +6,7 @@ import { type Database } from '@/types/supabase';
 import { UserPlusIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Link from 'next/link';
 
+// The type remains the same, as we will manually construct this structure
 type ClientProfile = Database['public']['Tables']['profiles']['Row'] & {
   clients: {
     id: number;
@@ -37,22 +38,40 @@ export default function ClientsPage() {
 
   const fetchClients = useCallback(async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    setError(null);
+
+    // FIX: Fetch profiles and clients in two separate queries and join them manually.
+    // This is more robust and does not depend on a predefined foreign key for the select query.
+    const { data: profilesData, error: profilesError } = await supabase
       .from("profiles")
-      .select(`
-        *,
-        clients (
-          id,
-          company_name
-        )
-      `)
+      .select(`*`)
       .eq("role", "client");
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setClients(data as ClientProfile[] || []);
+    if (profilesError) {
+      setError(profilesError.message);
+      setLoading(false);
+      return;
     }
+
+    const { data: clientsData, error: clientsError } = await supabase
+      .from("clients")
+      .select(`id, profile_id, company_name`);
+
+    if (clientsError) {
+      setError(clientsError.message);
+      setLoading(false);
+      return;
+    }
+
+    // Manually join the data
+    const clientsMap = new Map(clientsData.map(client => [client.profile_id, client]));
+    
+    const combinedData = profilesData.map(profile => ({
+      ...profile,
+      clients: clientsMap.get(profile.id) || null,
+    }));
+
+    setClients(combinedData as ClientProfile[]);
     setLoading(false);
   }, [supabase]);
 
@@ -81,7 +100,7 @@ export default function ClientsPage() {
     e.preventDefault();
     setError(null);
 
-    const response = await fetch('/api/admin/create-user', {
+    const response = await fetch('/admin/create-user', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -92,7 +111,6 @@ export default function ClientsPage() {
             role: 'client',
             fullName: newClient.fullName,
             contactPhone: newClient.contactPhone,
-            // We can pass extra data for the trigger to use
             companyName: newClient.companyName,
         }),
     });
@@ -104,7 +122,6 @@ export default function ClientsPage() {
         return;
     }
 
-    // Since the trigger handles profile creation, we just need to refresh the list.
     await fetchClients();
     closeCreateModal();
   };
@@ -113,7 +130,6 @@ export default function ClientsPage() {
     e.preventDefault();
     if (!editingClient) return;
 
-    // Update profile table
     const { error: profileError } = await supabase
       .from('profiles')
       .update({
@@ -127,7 +143,6 @@ export default function ClientsPage() {
       return;
     }
 
-    // Update clients table
     if (editingClient.clients) {
         const { error: clientError } = await supabase
             .from('clients')
@@ -206,19 +221,27 @@ export default function ClientsPage() {
                 clients.map((client) => (
                   <tr key={client.id}>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-800">
-                      <Link href={`/admin/clients/${client.clients?.id}`} className="hover:underline">
-                        {client.full_name}
-                      </Link>
+                      {/* The check remains, but the data should now be correct */}
+                      {client.clients?.id ? (
+                        <Link href={`/admin/clients/${client.clients.id}`} className="hover:underline">
+                          {client.full_name}
+                        </Link>
+                      ) : (
+                        <span className="text-gray-500" title="This client has a profile but no client-specific record.">
+                          {client.full_name} (No Client Record)
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{client.clients?.company_name || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{client.contact_phone || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
-                      <button onClick={() => openEditModal(client)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100">
-                        <PencilIcon className="h-5 w-5" />
-                      </button>
-                      <button onClick={() => openDeleteModal(client)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100">
-                        <TrashIcon className="h-5 w-5" />
-                      </button>
+                       {/* The "Fix Record" button has been removed to prevent duplication */}
+                        <button onClick={() => openEditModal(client)} className="p-2 text-indigo-600 hover:text-indigo-900 rounded-full hover:bg-indigo-100">
+                          <PencilIcon className="h-5 w-5" />
+                        </button>
+                        <button onClick={() => openDeleteModal(client)} className="p-2 text-red-600 hover:text-red-900 rounded-full hover:bg-red-100">
+                          <TrashIcon className="h-5 w-5" />
+                        </button>
                     </td>
                   </tr>
                 ))

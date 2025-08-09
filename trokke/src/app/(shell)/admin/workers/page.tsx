@@ -98,7 +98,9 @@ export default function WorkersPage() {
     e.preventDefault();
     setError(null);
 
-    const response = await fetch('/api/admin/create-user', {
+    // *** FIX: The URL path is corrected here ***
+    // It now correctly points to the API route based on its file location.
+    const response = await fetch('/admin/create-user', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -146,25 +148,16 @@ export default function WorkersPage() {
   const handleDeleteWorker = async () => {
     if (!deletingWorker) return;
 
-    const { error: profileError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', deletingWorker.id);
-
-    if (profileError) {
-        setError(`Failed to delete profile: ${profileError.message}`);
-        closeDeleteModal();
-        return;
-    }
-
+    // First, try to delete the user from auth, which should cascade
     const { error: functionError } = await supabase.functions.invoke('delete-user', {
         body: { userId: deletingWorker.id },
     });
 
     if (functionError) {
-        setError(`Failed to delete user from auth: ${functionError.message}. Please do it manually.`);
+        setError(`Failed to delete user from auth: ${functionError.message}. Please do it manually for now.`);
     }
 
+    // Refetch workers to update the UI
     await fetchWorkers();
     closeDeleteModal();
   };

@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instanciate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.3 (519615d)"
+    PostgrestVersion: "13.0.4"
   }
   public: {
     Tables: {
@@ -93,7 +93,7 @@ export type Database = {
           {
             foreignKeyName: "clients_profile_id_fkey"
             columns: ["profile_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -149,42 +149,126 @@ export type Database = {
           },
         ]
       }
+      truck_trips: {
+        Row: {
+          closing_km: number | null
+          comments: string | null
+          created_at: string
+          expense_amount: number | null
+          expense_date: string | null
+          id: number
+          km_per_liter: number | null
+          liters_filled: number | null
+          next_service_km: number | null
+          notes: string | null
+          opening_km: number | null
+          supplier: string | null
+          total_km: number | null
+          trip_date: string | null
+          truck_id: number
+          worker_id: number | null
+          worker_name: string | null
+        }
+        Insert: {
+          closing_km?: number | null
+          comments?: string | null
+          created_at?: string
+          expense_amount?: number | null
+          expense_date?: string | null
+          id?: number
+          km_per_liter?: number | null
+          liters_filled?: number | null
+          next_service_km?: number | null
+          notes?: string | null
+          opening_km?: number | null
+          supplier?: string | null
+          total_km?: number | null
+          trip_date?: string | null
+          truck_id: number
+          worker_id?: number | null
+          worker_name?: string | null
+        }
+        Update: {
+          closing_km?: number | null
+          comments?: string | null
+          created_at?: string
+          expense_amount?: number | null
+          expense_date?: string | null
+          id?: number
+          km_per_liter?: number | null
+          liters_filled?: number | null
+          next_service_km?: number | null
+          notes?: string | null
+          opening_km?: number | null
+          supplier?: string | null
+          total_km?: number | null
+          trip_date?: string | null
+          truck_id?: number
+          worker_id?: number | null
+          worker_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "truck_trips_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "truck_trips_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       trucks: {
         Row: {
           assigned_worker_id: number | null
+          category: string | null
           created_at: string
           id: number
           license_plate: string
           make: string | null
           model: string | null
           status: Database["public"]["Enums"]["truck_status"]
+          type: string | null
+          vin: string | null
           year: number | null
         }
         Insert: {
           assigned_worker_id?: number | null
+          category?: string | null
           created_at?: string
           id?: number
           license_plate: string
           make?: string | null
           model?: string | null
           status?: Database["public"]["Enums"]["truck_status"]
+          type?: string | null
+          vin?: string | null
           year?: number | null
         }
         Update: {
           assigned_worker_id?: number | null
+          category?: string | null
           created_at?: string
           id?: number
           license_plate?: string
           make?: string | null
           model?: string | null
           status?: Database["public"]["Enums"]["truck_status"]
+          type?: string | null
+          vin?: string | null
           year?: number | null
         }
         Relationships: [
           {
             foreignKeyName: "trucks_assigned_worker_id_fkey"
             columns: ["assigned_worker_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "workers"
             referencedColumns: ["id"]
           },
@@ -207,7 +291,7 @@ export type Database = {
           {
             foreignKeyName: "workers_profile_id_fkey"
             columns: ["profile_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -218,6 +302,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      delete_user: {
+        Args: { user_id: string }
+        Returns: undefined
+      }
       get_all_map_markers: {
         Args: Record<PropertyKey, never>
         Returns: Json
@@ -225,10 +313,6 @@ export type Database = {
       get_client_truck_and_store_locations: {
         Args: { client_profile_id: string }
         Returns: Json
-      }
-      get_user_role: {
-        Args: Record<PropertyKey, never>
-        Returns: Database["public"]["Enums"]["user_role"]
       }
     }
     Enums: {

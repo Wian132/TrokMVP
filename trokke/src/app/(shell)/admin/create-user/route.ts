@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
 
 export async function POST(request: Request) {
-  const { email, password, role, fullName, contactPhone } = await request.json();
+  const { email, password, role, fullName, contactPhone, companyName } = await request.json();
 
   // Ensure you have these environment variables set in your .env.local file
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -32,6 +32,8 @@ export async function POST(request: Request) {
       role, // This will be 'worker' or 'client'
       full_name: fullName,
       contact_phone: contactPhone,
+      // Pass the companyName for the trigger to use if the role is 'client'
+      companyName: companyName,
     },
   });
 
@@ -40,8 +42,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: authError.message }, { status: 400 });
   }
 
-  // The database trigger should handle creating the corresponding profile,
-  // worker, or client record.
+  // The database trigger you created (`handle_new_user`) will now execute,
+  // creating the corresponding profile and worker/client record.
 
   return NextResponse.json({ success: true, user: authData.user });
 }

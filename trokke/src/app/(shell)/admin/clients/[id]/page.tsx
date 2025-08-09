@@ -31,11 +31,16 @@ export default function ClientStoresPage() {
   });
 
   const fetchClientData = useCallback(async () => {
-    if (!clientId) return;
+    // FIX: Add a check to ensure the clientId is not the string "undefined"
+    if (!clientId || clientId === 'undefined') {
+        setError("Invalid client ID provided.");
+        setLoading(false);
+        return;
+    }
     setLoading(true);
     setError(null);
     try {
-      // Corrected Query: Fetch the client by its integer ID
+      // Fetch the client by its integer ID
       const { data: clientRecord, error: clientError } = await supabase
         .from("clients")
         .select(`id, profiles ( full_name )`)

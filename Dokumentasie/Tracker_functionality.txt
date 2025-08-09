@@ -1,0 +1,71 @@
+Overview of Tracker Fleet Management API Functionality
+Integrating with a telematics provider like Tracker allows an application to access a rich stream of data directly from the vehicles. Here is a breakdown of the typical features and data points available through their fleet management and telematics APIs.
+
+1. Real-Time Vehicle Tracking
+This is the core feature of any telematics system. The API would allow you to:
+
+Get Live Location: Fetch the real-time GPS coordinates (latitude and longitude) of any vehicle in the fleet.
+
+Track Vehicle Status: See if a vehicle's ignition is on or off.
+
+Monitor Speed and Direction: Get the current speed and heading of the vehicle. This is useful for ETAs and safety monitoring.
+
+2. Historical Trip Data
+APIs typically provide access to historical data, which is invaluable for analytics and reporting.
+
+Trip Replays: Retrieve a detailed history of a vehicle's movements over a specific period, including the route taken, stops made, and speed at various points.
+
+Stop/Stay Reports: Generate reports detailing where and for how long a vehicle was stationary. This is useful for verifying deliveries or analyzing driver downtime.
+
+Distance Reports: Get the total distance traveled by a vehicle or the entire fleet over a given time frame.
+
+3. Driver Behavior Monitoring
+This functionality is crucial for improving safety, reducing wear and tear on vehicles, and lowering fuel costs.
+
+Harsh Events: Receive alerts for harsh acceleration, braking, and cornering.
+
+Speeding Alerts: Get notified when a driver exceeds a predefined speed limit or the national speed limit.
+
+Idling Time: Monitor how long a vehicle is left idling, which helps in managing fuel consumption.
+
+4. Geofencing
+Geofencing allows you to create virtual perimeters around real-world geographic areas.
+
+Create & Manage Geofences: Programmatically define geofences (e.g., around client sites, distribution centers, or restricted areas).
+
+Entry/Exit Alerts: Receive notifications whenever a vehicle enters or leaves a defined geofence. This is perfect for automating arrival/departure logs for your client sites.
+
+5. Vehicle Diagnostics & Maintenance (OBD-II Data)
+If the Tracker unit is connected to the vehicle's On-Board Diagnostics (OBD-II) port, the API can provide a wealth of information.
+
+Odometer Readings: Get accurate mileage for maintenance scheduling.
+
+Fuel Level & Consumption: Monitor fuel levels in real-time and analyze consumption patterns.
+
+Engine Hours: Track engine run time, which is another key metric for planning maintenance.
+
+Diagnostic Trouble Codes (DTCs): Be alerted to engine fault codes, allowing for proactive maintenance before a small issue becomes a major breakdown.
+
+Battery Voltage: Monitor the health of the vehicle's battery.
+
+6. Security and Alerting
+Panic Button: Receive an immediate alert if a driver activates a panic button in the vehicle.
+
+Unauthorized Movement: Get notified if a vehicle is moved without the ignition being turned on (i.e., being towed).
+
+Stolen Vehicle Recovery (SVR): While the recovery process is handled by Tracker, the API can flag a vehicle as stolen, which could trigger lockdowns or other protocols within your app.
+
+Integration Potential for Your App
+By integrating this data, you could:
+
+Display truck locations on your existing maps for both admins and clients.
+
+Automate logbooks by using trip and geofence data.
+
+Provide accurate ETAs to clients based on a truck's live location.
+
+Create a driver scoring system based on behavior data.
+
+Send proactive maintenance alerts based on odometer readings or fault codes.
+
+When you meet with the business owner, a great starting point would be to ask which Tracker subscription package they have, as this will determine which of these API features are available to them.

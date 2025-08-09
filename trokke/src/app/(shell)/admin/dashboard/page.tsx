@@ -6,12 +6,14 @@ import TrucksPage from '../trucks/page';
 import ClientsPage from '../clients/page';
 import MyShopsPage from '../my-shops/page';
 import WorkersPage from '../workers/page';
+import TripsPage from '../trips/page'; // Import the new TripsPage
 import AnalyticsDashboard from '../../../../components/AnalyticsDashboard';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/solid';
 
 const tabs = [
   { name: 'Map' },
   { name: 'Trucks' },
+  { name: 'Trips' }, // Add the new Trips tab
   { name: 'Workers' },
   { name: 'Clients' },
   { name: 'My Shops' },
@@ -24,10 +26,11 @@ const AdminDashboardPage = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'Map':
-        // The map will now fill the available vertical space
         return <div className="h-full w-full"><MapComponent /></div>;
       case 'Trucks':
         return <TrucksPage />;
+      case 'Trips': // Add case for the new TripsPage
+        return <TripsPage />;
       case 'Workers':
         return <WorkersPage />;
       case 'Clients':

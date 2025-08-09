@@ -20,6 +20,7 @@ const adminLinks: NavLink[] = [
   { href: "/admin/clients", label: "Clients" },
   { href: "/admin/workers", label: "Workers" },
   { href: "/admin/trucks", label: "Trucks" },
+  { href: "/admin/trips", label: "Trips" },
   { href: "/admin/my-shops", label: "My Shops" },
 ];
 
