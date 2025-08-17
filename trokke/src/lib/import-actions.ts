@@ -1,118 +1,231 @@
 // src/lib/import-actions.ts
-'use server'
 
-import { createClient } from '@/utils/supabase/server'
-import * as XLSX from 'xlsx'
-import { type Database } from '@/types/supabase'
+"use server";
 
-// A more flexible type for a row from the Excel sheet.
-type ExcelRow = (string | number | Date | null | undefined)[];
+import { type Database } from "@/types/supabase";
+import { createClient } from "@/utils/supabase/server";
+import * as XLSX from 'xlsx';
 
-/**
- * Parses a date string or Excel serial number from various formats.
- * @param dateValue The value from the cell.
- * @returns A Date object or null if parsing fails.
- */
-const parseFlexibleDate = (dateValue: unknown): Date | null => {
+type TripInsert = Database['public']['Tables']['truck_trips']['Insert'];
+
+// --- Helper Functions ---
+
+function cleanAndParseFloat(value: string | number | undefined | null): number {
+  if (value === undefined || value === null) return NaN;
+  if (typeof value === 'number') return value;
+  const cleanedValue = String(value).replace(/["',]/g, "").trim();
+  return parseFloat(cleanedValue);
+}
+
+// MODIFIED: Corrected date parsing to be timezone-neutral (UTC).
+function parseDate(dateValue: unknown): Date | null {
     if (!dateValue) return null;
 
-    // Handle Excel's numeric serial date format first
-    if (typeof dateValue === 'number' && dateValue > 0) {
-        // Excel's epoch starts on 1899-12-30. 25569 is the diff between Excel and Unix epochs.
-        return new Date(Math.round((dateValue - 25569) * 86400 * 1000));
+    let localDate: Date;
+
+    // Handle case where xlsx library already converted it to a Date object.
+    // This is the most common case and the source of the previous error.
+    if (dateValue instanceof Date) {
+        if (isNaN(dateValue.getTime())) return null;
+        localDate = dateValue;
     }
-
-    if (typeof dateValue !== 'string') return null;
-
-    const dateStr = dateValue.trim();
-    // Regex for various formats like YYYY-MM-DD, DD-MM-YYYY, DD.MM.YYYY, YYYY/MM/DD etc.
-    const regex = /(\d{1,4})[\-.\/](\d{1,2})[\-.\/](\d{1,4})/;
-    const parts = dateStr.match(regex);
-
-    if (!parts) return null;
-
-    let year, month, day;
-
-    // Check for YYYY at the start
-    if (parts[1].length === 4) {
-        year = parseInt(parts[1], 10);
-        month = parseInt(parts[2], 10) - 1; // JS months are 0-indexed
-        day = parseInt(parts[3], 10);
+    // Handle Excel serial number format.
+    else if (typeof dateValue === 'number' && dateValue > 0) {
+        // Convert Excel serial date to a JS Date. 25569 is the day difference between Excel's 1900 epoch and Unix's 1970 epoch.
+        localDate = new Date(Math.round((dateValue - 25569) * 86400 * 1000));
     }
-    // Check for YYYY at the end
-    else if (parts[3].length === 4) {
-        day = parseInt(parts[1], 10);
-        month = parseInt(parts[2], 10) - 1;
-        year = parseInt(parts[3], 10);
+    // Handle string dates.
+    else if (typeof dateValue === 'string') {
+        const dateStr = dateValue.trim();
+        // The `new Date()` constructor can be unreliable, but we can use it to get the components.
+        // A string like '2024-07-24' is parsed as UTC, but '07/24/2024' is parsed as local.
+        // By creating a UTC date from the components, we standardize the result.
+        localDate = new Date(dateStr);
     }
+    // If it's not a recognized type, return null.
     else {
-        return null; // Ambiguous format
-    }
-
-    const date = new Date(Date.UTC(year, month, day));
-    // Validate the parsed date
-    if (isNaN(date.getTime()) || date.getUTCFullYear() !== year || date.getUTCMonth() !== month || date.getUTCDate() !== day) {
         return null;
     }
 
-    return date;
-};
+    if (isNaN(localDate.getTime())) return null;
+
+    // FIX: The core of the solution.
+    // We take the year, month, and day from the potentially timezone-affected "localDate"
+    // and use them to create a new Date object that is explicitly at midnight UTC.
+    // This neutralizes the timezone of the server where the code is running.
+    return new Date(Date.UTC(localDate.getFullYear(), localDate.getMonth(), localDate.getDate()));
+}
 
 
-/**
- * Creates a map from header names to column indices.
- * @param headerRow The first row of the Excel sheet.
- * @returns A map where keys are lowercased header names and values are their indices.
- */
-const createHeaderMap = (headerRow: ExcelRow): Record<string, number> => {
-    const map: Record<string, number> = {};
-    headerRow.forEach((cell, index) => {
-        if (typeof cell === 'string') {
-            // Standardize header names for reliable mapping
-            const cleanHeader = cell.trim().toLowerCase().replace(/\s+/g, ' ');
-            map[cleanHeader] = index;
+function findHeaderRow(rows: (string | number | null)[][]): { headerRow: (string|number|null)[], dataStartIndex: number } {
+  for (let i = 0; i < rows.length; i++) {
+    const lowercasedRow = rows[i].map(h => String(h || '').trim().toLowerCase());
+    if (lowercasedRow.includes("date") && (lowercasedRow.includes("litres") || lowercasedRow.includes("driver") || lowercasedRow.includes("km") || lowercasedRow.includes("hrs") || lowercasedRow.includes("opening km"))) {
+      return {
+        headerRow: rows[i],
+        dataStartIndex: i + 1,
+      };
+    }
+  }
+  return { headerRow: [], dataStartIndex: -1 };
+}
+
+// --- Specialized Parsers (No changes below this line) ---
+
+function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum: number): TripInsert[] {
+    const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
+    if (dataStartIndex === -1) return [];
+
+    const headers = headerRow.map(h => String(h || '').trim().toLowerCase());
+    const dateIndex = headers.indexOf('date');
+    const odoIndex = headers.indexOf('opening km');
+    const distanceIndex = headers.indexOf('km');
+    const litresIndex = headers.indexOf('litres');
+    const driverIndex = headers.indexOf('driver');
+
+    const validRows: { date: Date; opening_km: number; distance_from_sheet: number; litres: number; driver: string; }[] = [];
+    for (let i = dataStartIndex; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
+        
+        const date = parseDate(row[dateIndex]);
+        const odometer = cleanAndParseFloat(row[odoIndex]);
+        const litres = cleanAndParseFloat(row[litresIndex]);
+
+        if (date && (!isNaN(odometer) || !isNaN(litres))) {
+            validRows.push({
+                date,
+                opening_km: odometer,
+                distance_from_sheet: cleanAndParseFloat(row[distanceIndex]),
+                litres: litres,
+                driver: String(row[driverIndex] || 'N/A').trim(),
+            });
         }
+    }
+
+    if (validRows.length === 0) return [];
+
+    validRows.sort((a, b) => {
+        if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime();
+        return a.opening_km - b.opening_km;
     });
-    return map;
-};
 
-// Helper to safely get a numeric value from a row
-const getNumericValue = (row: ExcelRow, map: Record<string, number>, key: string): number | null => {
-    const value = row[map[key]];
-    return typeof value === 'number' ? value : null;
-};
+    const trips: TripInsert[] = [];
+    for (let i = 0; i < validRows.length; i++) {
+        const currentRow = validRows[i];
+        let totalKm = currentRow.distance_from_sheet;
+        
+        if (isNaN(currentRow.opening_km) && i > 0) {
+            const prevRow = trips[i - 1];
+            if (prevRow.closing_km) {
+                currentRow.opening_km = prevRow.closing_km;
+            }
+        }
 
+        if (isNaN(totalKm) || totalKm <= 0) {
+            if (i < validRows.length - 1) {
+                const nextRow = validRows[i + 1];
+                if (!isNaN(nextRow.opening_km) && !isNaN(currentRow.opening_km)) {
+                    totalKm = nextRow.opening_km - currentRow.opening_km;
+                }
+            } else {
+                totalKm = 0;
+            }
+        }
+        
+        if (totalKm < 0) totalKm = 0;
 
-export async function handleImport(formData: FormData): Promise<{ message?: string; error?: string }> {
-  const file = formData.get('file') as File
+        trips.push({
+            truck_id: truckIdNum,
+            trip_date: currentRow.date.toISOString(),
+            opening_km: isNaN(currentRow.opening_km) ? null : currentRow.opening_km,
+            total_km: totalKm,
+            closing_km: isNaN(currentRow.opening_km) ? null : currentRow.opening_km + totalKm,
+            liters_filled: isNaN(currentRow.litres) ? null : currentRow.litres,
+            worker_name: currentRow.driver,
+            is_hours_based: false,
+        });
+    }
+    return trips;
+}
+
+function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: number): TripInsert[] {
+    const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
+    if (dataStartIndex === -1) return [];
+
+    const headers = headerRow.map(h => String(h || '').trim().toLowerCase());
+    const dateIndex = headers.indexOf('date');
+    const odoIndex = headers.indexOf('opening hrs');
+    const litresIndex = headers.indexOf('litres');
+    const driverIndex = headers.indexOf('driver');
+
+    const processedRows: { date: Date; odometer: number; originalRow: (string | number | null)[] }[] = [];
+    for (let i = dataStartIndex; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
+
+        const date = parseDate(row[dateIndex]);
+        const odometer = cleanAndParseFloat(row[odoIndex]);
+
+        if (date && !isNaN(odometer)) {
+            processedRows.push({ date, odometer, originalRow: row });
+        }
+    }
+
+    if (processedRows.length < 2) return [];
+    processedRows.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const trips: TripInsert[] = [];
+    for (let i = 1; i < processedRows.length; i++) {
+        const currentRow = processedRows[i];
+        const previousRow = processedRows[i - 1];
+        const distance = currentRow.odometer - previousRow.odometer;
+
+        if (distance > 0) {
+            const litres = cleanAndParseFloat(currentRow.originalRow[litresIndex]);
+            const driver = driverIndex !== -1 ? String(currentRow.originalRow[driverIndex] || 'N/A').trim() : 'N/A';
+            
+            trips.push({
+                truck_id: truckIdNum,
+                trip_date: currentRow.date.toISOString(),
+                opening_km: previousRow.odometer,
+                total_km: distance,
+                liters_filled: isNaN(litres) ? null : litres,
+                worker_name: driver,
+                is_hours_based: true,
+            });
+        }
+    }
+    return trips;
+}
+
+// --- Main Import Function ---
+
+export async function handleImport(formData: FormData): Promise<{ success: boolean; message: string }> {
+  'use server';
+
+  const file = formData.get('file') as File;
   if (!file) {
-    return { error: 'No file uploaded.' }
+    return { success: false, message: "No file uploaded." };
   }
 
   try {
     const supabase = await createClient();
-    const bytes = await file.arrayBuffer()
-    const workbook = XLSX.read(bytes, { type: 'buffer' })
+    const bytes = await file.arrayBuffer();
+    const workbook = XLSX.read(bytes, { type: 'buffer', cellDates: true });
     
     const importStartDate = new Date('2024-01-01');
-    let trucksImported = 0;
-    let tripsImported = 0;
-    let tripsSkipped = 0;
+    let totalTripsImported = 0;
+    let trucksProcessed = 0;
 
     for (const sheetName of workbook.SheetNames) {
         const license_plate = sheetName.trim();
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) continue;
 
-        const jsonData: ExcelRow[] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
-        const rawData: ExcelRow[] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true });
+        const jsonData: (string | number | null)[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: null });
+        if (jsonData.length < 2) continue;
 
-        if (jsonData.length < 2) continue; // Skip empty or header-only sheets
-
-        const headerRow = jsonData[0];
-        const headerMap = createHeaderMap(headerRow);
-        
-        // --- Find Truck or Create it ---
         const { data: truck, error: truckError } = await supabase
             .from('trucks')
             .upsert({ license_plate }, { onConflict: 'license_plate' })
@@ -123,79 +236,43 @@ export async function handleImport(formData: FormData): Promise<{ message?: stri
             console.error(`Error upserting truck ${license_plate}:`, truckError);
             continue;
         }
-        trucksImported++;
-        const truck_id = truck.id;
+        trucksProcessed++;
+        const truckIdNum = truck.id;
 
-        const tripsToInsert: Database['public']['Tables']['truck_trips']['Insert'][] = [];
-
-        // --- Process Trips ---
-        for (let i = 1; i < jsonData.length; i++) {
-            const stringRow = jsonData[i];
-            const rawRow = rawData[i];
-            
-            if (!stringRow || stringRow.length === 0 || !stringRow.some(cell => cell)) continue;
-
-            const tripDateValue = rawRow[headerMap['date']];
-            const tripDate = parseFlexibleDate(tripDateValue);
-
-            if (!tripDate || tripDate < importStartDate) {
-                if (tripDate) tripsSkipped++;
-                continue; // Skip if date is invalid or before 2024
-            }
-            
-            const opening_km = getNumericValue(rawRow, headerMap, 'opening km') ?? getNumericValue(rawRow, headerMap, 'openingkm');
-            const total_km = getNumericValue(rawRow, headerMap, 'km');
-            
-            const tripDataObject = {
-                truck_id,
-                trip_date: tripDate.toISOString(),
-                worker_name: (stringRow[headerMap['driver']] as string | null) ?? null,
-                opening_km,
-                total_km,
-                closing_km: (opening_km !== null && total_km !== null) ? opening_km + total_km : null,
-                liters_filled: getNumericValue(rawRow, headerMap, 'liters') ?? getNumericValue(rawRow, headerMap, 'litres'),
-                km_per_liter: getNumericValue(rawRow, headerMap, 'km / l'),
-                notes: (stringRow[headerMap['notes']] as string | null) ?? null,
-                supplier: (stringRow[headerMap['supplier']] as string | null) ?? null,
-                comments: (stringRow[headerMap['comments']] as string | null) ?? null,
-                expense_amount: getNumericValue(rawRow, headerMap, 'expense'),
-                expense_date: parseFlexibleDate(rawRow[headerMap['date 2']])?.toISOString() ?? null,
-                next_service_km: getNumericValue(rawRow, headerMap, 'next service') ?? getNumericValue(rawRow, headerMap, 'next service km'),
-            };
-
-            tripsToInsert.push(tripDataObject);
+        let tripsToInsert: TripInsert[] = [];
+        const lowerCaseReg = license_plate.toLowerCase();
+        
+        if (lowerCaseReg.includes('forklift') || lowerCaseReg.includes('lxc821mp')) {
+            tripsToInsert = parseHoursSheet(jsonData, truckIdNum);
+        } else {
+            tripsToInsert = parseStandardKmSheet(jsonData, truckIdNum);
         }
+        
+        const finalTrips = tripsToInsert.filter(trip => trip.trip_date && new Date(trip.trip_date) >= importStartDate);
 
-        if (tripsToInsert.length > 0) {
-            // To ensure idempotency, we delete old trips within the date range before inserting new ones.
-            const { error: deleteError } = await supabase.from('truck_trips')
-                .delete()
-                .eq('truck_id', truck_id)
-                .gte('trip_date', importStartDate.toISOString());
+        if (finalTrips.length > 0) {
+            const { data: existingTrips } = await supabase.from("truck_trips").select("trip_date, opening_km").eq("truck_id", truckIdNum);
+            const existingTripSet = new Set(existingTrips?.map(t => `${new Date(t.trip_date!).toISOString().split('T')[0]}_${t.opening_km}`) || []);
+            const newTrips = finalTrips.filter(trip => {
+                const tripKey = `${new Date(trip.trip_date!).toISOString().split('T')[0]}_${trip.opening_km}`;
+                return !existingTripSet.has(tripKey);
+            });
 
-            if (deleteError) {
-                console.error(`Could not delete old trips for ${license_plate}:`, deleteError.message);
-            }
-
-            const { error: tripsError } = await supabase.from('truck_trips').insert(tripsToInsert);
-            if (tripsError) {
-                console.error(`Error inserting trips for ${license_plate}:`, tripsError.message);
-                return { error: `Failed to insert trips for ${license_plate}: ${tripsError.message}` };
-            } else {
-                tripsImported += tripsToInsert.length;
+            if (newTrips.length > 0) {
+                const { error } = await supabase.from("truck_trips").insert(newTrips);
+                if (error) {
+                    console.error(`Error inserting trips for ${license_plate}:`, error.message);
+                } else {
+                    totalTripsImported += newTrips.length;
+                }
             }
         }
     }
 
-    return { 
-        message: `Import complete! Processed ${trucksImported} trucks. Imported ${tripsImported} new trip records and skipped ${tripsSkipped} records from before 2024.` 
-    };
+    return { success: true, message: `Import complete! Processed ${trucksProcessed} sheets and imported ${totalTripsImported} new trip records.` };
 
   } catch (error: unknown) {
-    console.error('Import failed:', error);
-    if (error instanceof Error) {
-        return { error: `Import failed: ${error.message}` };
-    }
-    return { error: 'An unknown error occurred during import.' };
+    const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    return { success: false, message: `Import failed: ${errorMessage}` };
   }
 }

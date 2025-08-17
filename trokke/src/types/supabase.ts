@@ -7,7 +7,7 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instanciate createClient with right options
+  // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
@@ -144,6 +144,13 @@ export type Database = {
             foreignKeyName: "truck_locations_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
+          {
+            foreignKeyName: "truck_locations_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
             referencedRelation: "trucks"
             referencedColumns: ["id"]
           },
@@ -157,6 +164,7 @@ export type Database = {
           expense_amount: number | null
           expense_date: string | null
           id: number
+          is_hours_based: boolean | null
           km_per_liter: number | null
           liters_filled: number | null
           next_service_km: number | null
@@ -176,6 +184,7 @@ export type Database = {
           expense_amount?: number | null
           expense_date?: string | null
           id?: number
+          is_hours_based?: boolean | null
           km_per_liter?: number | null
           liters_filled?: number | null
           next_service_km?: number | null
@@ -195,6 +204,7 @@ export type Database = {
           expense_amount?: number | null
           expense_date?: string | null
           id?: number
+          is_hours_based?: boolean | null
           km_per_liter?: number | null
           liters_filled?: number | null
           next_service_km?: number | null
@@ -208,6 +218,13 @@ export type Database = {
           worker_name?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "truck_trips_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
           {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
@@ -230,6 +247,7 @@ export type Database = {
           category: string | null
           created_at: string
           id: number
+          last_calculated_avg_km_l: number | null
           license_plate: string
           make: string | null
           model: string | null
@@ -243,6 +261,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: number
+          last_calculated_avg_km_l?: number | null
           license_plate: string
           make?: string | null
           model?: string | null
@@ -256,6 +275,7 @@ export type Database = {
           category?: string | null
           created_at?: string
           id?: number
+          last_calculated_avg_km_l?: number | null
           license_plate?: string
           make?: string | null
           model?: string | null
@@ -299,9 +319,28 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      monthly_truck_analytics: {
+        Row: {
+          avg_monthly_km_l: number | null
+          category: string | null
+          last_odometer_of_month: number | null
+          license_plate: string | null
+          month: string | null
+          total_monthly_km: number | null
+          total_monthly_liters: number | null
+          truck_id: number | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
+      calculate_monthly_averages_for_period: {
+        Args: { end_date: string }
+        Returns: {
+          avg_km_l: number
+          truck_id: number
+        }[]
+      }
       delete_user: {
         Args: { user_id: string }
         Returns: undefined
@@ -313,6 +352,21 @@ export type Database = {
       get_client_truck_and_store_locations: {
         Args: { client_profile_id: string }
         Returns: Json
+      }
+      get_truck_details: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          category: string
+          id: number
+          latest_km_per_liter: number
+          latest_odometer: number
+          license_plate: string
+          make: string
+          model: string
+          status: string
+          worker_name: string
+          year: number
+        }[]
       }
     }
     Enums: {
