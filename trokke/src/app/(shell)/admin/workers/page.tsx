@@ -5,13 +5,15 @@ import { createClient } from '@/utils/supabase/client';
 import { type Database } from '@/types/supabase';
 import { UserPlusIcon, PencilIcon, TrashIcon, TruckIcon } from '@heroicons/react/24/outline';
 
+// --- Type Definitions ---
+// Corrected the 'trucks' type to be an array to match the query result.
 type WorkerProfile = Database['public']['Tables']['profiles']['Row'] & {
   workers: {
     id: number;
     trucks: {
       license_plate: string;
-    } | null;
-  } | null;
+    }[]; // A worker can be linked from multiple trucks, so this is an array.
+  }[];
 };
 type Truck = Database['public']['Tables']['trucks']['Row'];
 
@@ -98,8 +100,6 @@ export default function WorkersPage() {
     e.preventDefault();
     setError(null);
 
-    // *** FIX: The URL path is corrected here ***
-    // It now correctly points to the API route based on its file location.
     const response = await fetch('/admin/create-user', {
       method: 'POST',
       headers: {
@@ -148,7 +148,6 @@ export default function WorkersPage() {
   const handleDeleteWorker = async () => {
     if (!deletingWorker) return;
 
-    // First, try to delete the user from auth, which should cascade
     const { error: functionError } = await supabase.functions.invoke('delete-user', {
         body: { userId: deletingWorker.id },
     });
@@ -157,7 +156,6 @@ export default function WorkersPage() {
         setError(`Failed to delete user from auth: ${functionError.message}. Please do it manually for now.`);
     }
 
-    // Refetch workers to update the UI
     await fetchWorkers();
     closeDeleteModal();
   };
@@ -169,7 +167,7 @@ export default function WorkersPage() {
         return;
     }
 
-    const workerRecordId = assigningWorker.workers?.id;
+    const workerRecordId = assigningWorker.workers?.[0]?.id;
     if (!workerRecordId) {
         setError("Assignment failed: The selected worker is missing a valid record in the system. Please check the database triggers or re-create the worker.");
         return;
@@ -250,18 +248,19 @@ export default function WorkersPage() {
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-800">{worker.full_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">{worker.contact_phone || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap font-semibold text-gray-600">
-                      {worker.workers?.trucks?.license_plate || <span className="text-gray-400">Unassigned</span>}
+                      {/* FIX: Access the first truck in the trucks array */}
+                      {worker.workers?.[0]?.trucks?.[0]?.license_plate || <span className="text-gray-400">Unassigned</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
                         <button
                           onClick={() => openAssignModal(worker)}
-                          disabled={!worker.workers}
+                          disabled={!worker.workers || worker.workers.length === 0}
                           className={`p-2 rounded-full ${
-                            !worker.workers
+                            !worker.workers || worker.workers.length === 0
                               ? 'text-gray-300 cursor-not-allowed'
                               : 'text-green-600 hover:text-green-900 hover:bg-green-100'
                           }`}
-                          title={!worker.workers ? "Cannot assign: Worker record is missing" : "Assign Truck"}
+                          title={!worker.workers || worker.workers.length === 0 ? "Cannot assign: Worker record is missing" : "Assign Truck"}
                         >
                             <TruckIcon className="h-5 w-5" />
                         </button>

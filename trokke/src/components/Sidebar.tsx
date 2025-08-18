@@ -19,6 +19,7 @@ const adminLinks: NavLink[] = [
   { href: "/admin/dashboard", label: "Dashboard" },
   { href: "/admin/clients", label: "Clients" },
   { href: "/admin/workers", label: "Workers" },
+  { href: "/admin/link-workers", label: "Link Workers" },
   { href: "/admin/trucks", label: "Trucks" },
   { href: "/admin/trips", label: "Trips" },
   { href: "/admin/my-shops", label: "My Shops" },
@@ -32,6 +33,7 @@ const clientLinks: NavLink[] = [
 const workerLinks: NavLink[] = [
   { href: "/worker/dashboard", label: "Dashboard" },
   { href: "/worker/my-truck", label: "My Truck" },
+  { href: "/worker/pre-trip-check", label: "Pre-Trip Check" },
 ];
 
 export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: SidebarProps) {
