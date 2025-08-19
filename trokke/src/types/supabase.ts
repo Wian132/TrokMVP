@@ -99,6 +99,85 @@ export type Database = {
           },
         ]
       }
+      pre_trip_checks: {
+        Row: {
+          center_mirror_ok: boolean
+          checked_at: string
+          driver_mirror_ok: boolean
+          driver_window_ok: boolean
+          id: number
+          issues_resolved: boolean
+          lights_ok: boolean
+          oil_level_ok: boolean
+          other_issues: string | null
+          passenger_mirror_ok: boolean
+          passenger_window_ok: boolean
+          tires_ok: Json | null
+          truck_id: number
+          water_level_ok: boolean
+          windshield_ok: boolean
+          worker_id: number
+        }
+        Insert: {
+          center_mirror_ok?: boolean
+          checked_at?: string
+          driver_mirror_ok?: boolean
+          driver_window_ok?: boolean
+          id?: never
+          issues_resolved?: boolean
+          lights_ok?: boolean
+          oil_level_ok?: boolean
+          other_issues?: string | null
+          passenger_mirror_ok?: boolean
+          passenger_window_ok?: boolean
+          tires_ok?: Json | null
+          truck_id: number
+          water_level_ok?: boolean
+          windshield_ok?: boolean
+          worker_id: number
+        }
+        Update: {
+          center_mirror_ok?: boolean
+          checked_at?: string
+          driver_mirror_ok?: boolean
+          driver_window_ok?: boolean
+          id?: never
+          issues_resolved?: boolean
+          lights_ok?: boolean
+          oil_level_ok?: boolean
+          other_issues?: string | null
+          passenger_mirror_ok?: boolean
+          passenger_window_ok?: boolean
+          tires_ok?: Json | null
+          truck_id?: number
+          water_level_ok?: boolean
+          windshield_ok?: boolean
+          worker_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pre_trip_checks_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
+          {
+            foreignKeyName: "pre_trip_checks_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pre_trip_checks_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           contact_phone: string | null
@@ -119,6 +198,69 @@ export type Database = {
           role?: Database["public"]["Enums"]["user_role"]
         }
         Relationships: []
+      }
+      services: {
+        Row: {
+          air_filter: boolean | null
+          brakes: boolean | null
+          comments: string | null
+          created_at: string
+          diesel_filter: boolean | null
+          expense_amount: number | null
+          id: number
+          odo_reading: number | null
+          oil_filter: boolean | null
+          service_date: string | null
+          supplier: string | null
+          tires: boolean | null
+          truck_id: number
+        }
+        Insert: {
+          air_filter?: boolean | null
+          brakes?: boolean | null
+          comments?: string | null
+          created_at?: string
+          diesel_filter?: boolean | null
+          expense_amount?: number | null
+          id?: never
+          odo_reading?: number | null
+          oil_filter?: boolean | null
+          service_date?: string | null
+          supplier?: string | null
+          tires?: boolean | null
+          truck_id: number
+        }
+        Update: {
+          air_filter?: boolean | null
+          brakes?: boolean | null
+          comments?: string | null
+          created_at?: string
+          diesel_filter?: boolean | null
+          expense_amount?: number | null
+          id?: never
+          odo_reading?: number | null
+          oil_filter?: boolean | null
+          service_date?: string | null
+          supplier?: string | null
+          tires?: boolean | null
+          truck_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "services_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
+          {
+            foreignKeyName: "services_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       truck_locations: {
         Row: {
@@ -246,11 +388,15 @@ export type Database = {
           assigned_worker_id: number | null
           category: string | null
           created_at: string
+          current_odo: number | null
           id: number
+          is_hours_based: boolean
           last_calculated_avg_km_l: number | null
           license_plate: string
           make: string | null
           model: string | null
+          next_service_km: number | null
+          service_interval_km: number | null
           status: Database["public"]["Enums"]["truck_status"]
           type: string | null
           vin: string | null
@@ -260,11 +406,15 @@ export type Database = {
           assigned_worker_id?: number | null
           category?: string | null
           created_at?: string
+          current_odo?: number | null
           id?: number
+          is_hours_based?: boolean
           last_calculated_avg_km_l?: number | null
           license_plate: string
           make?: string | null
           model?: string | null
+          next_service_km?: number | null
+          service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
           vin?: string | null
@@ -274,11 +424,15 @@ export type Database = {
           assigned_worker_id?: number | null
           category?: string | null
           created_at?: string
+          current_odo?: number | null
           id?: number
+          is_hours_based?: boolean
           last_calculated_avg_km_l?: number | null
           license_plate?: string
           make?: string | null
           model?: string | null
+          next_service_km?: number | null
+          service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
           vin?: string | null
@@ -288,6 +442,35 @@ export type Database = {
           {
             foreignKeyName: "trucks_assigned_worker_id_fkey"
             columns: ["assigned_worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      worker_name_aliases: {
+        Row: {
+          alias_name: string
+          created_at: string
+          id: number
+          worker_id: number
+        }
+        Insert: {
+          alias_name: string
+          created_at?: string
+          id?: never
+          worker_id: number
+        }
+        Update: {
+          alias_name?: string
+          created_at?: string
+          id?: never
+          worker_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "worker_name_aliases_worker_id_fkey"
+            columns: ["worker_id"]
             isOneToOne: false
             referencedRelation: "workers"
             referencedColumns: ["id"]
@@ -334,10 +517,19 @@ export type Database = {
       }
     }
     Functions: {
-      calculate_monthly_averages_for_period: {
-        Args: { end_date: string }
+      calculate_kml_for_period: {
+        Args: { end_date: string; start_date: string }
         Returns: {
-          avg_km_l: number
+          avg_kml: number
+          first_odo: number
+          first_odo_date: string
+          last_odo: number
+          last_odo_date: string
+          latest_reading: number
+          liters_rows_included: number
+          odo_rows_included: number
+          total_km: number
+          total_liters: number
           truck_id: number
         }[]
       }
@@ -349,24 +541,37 @@ export type Database = {
         Args: Record<PropertyKey, never>
         Returns: Json
       }
+      get_all_truck_trip_counts: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          total_trips: number
+          truck_id: number
+        }[]
+      }
       get_client_truck_and_store_locations: {
         Args: { client_profile_id: string }
         Returns: Json
       }
-      get_truck_details: {
+      get_truck_details_with_analytics: {
         Args: Record<PropertyKey, never>
         Returns: {
           category: string
           id: number
+          is_hours_based: boolean
           latest_km_per_liter: number
           latest_odometer: number
           license_plate: string
           make: string
           model: string
           status: string
+          total_trips: number
           worker_name: string
           year: number
         }[]
+      }
+      link_unmapped_trips: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
       }
     }
     Enums: {

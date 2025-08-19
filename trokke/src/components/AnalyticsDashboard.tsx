@@ -48,14 +48,13 @@ const AnalyticsDashboard = () => {
         { name: 'Amount of Workers', value: workersCount.count ?? 0, icon: UsersIcon },
         { name: 'Amount of Clients', value: clientsCount.count ?? 0, icon: UserGroupIcon },
         { name: 'Total Trucks', value: trucksCount.count ?? 0, icon: TruckIcon },
-        { name: 'Amount of Stores', value: businessStoresCount.count ?? 0, icon: BuildingStorefrontIcon },
-        { name: 'Client Stores', value: clientStoresCount.count ?? 0, icon: BuildingStorefrontIcon },
+        { name: 'Amount of Stores', value: (businessStoresCount.count ?? 0) + (clientStoresCount.count ?? 0), icon: BuildingStorefrontIcon },
       ];
 
       statusCounts.forEach((statusResult, index) => {
         if (statusResult.count && statusResult.count > 0) {
           const statusName = truckStatuses[index];
-          newMetrics.splice(3, 0, {
+          newMetrics.push({
             name: `${statusName.charAt(0).toUpperCase() + statusName.slice(1).replace('_', ' ')} Trucks`,
             value: statusResult.count,
             icon: TruckIcon,
@@ -80,7 +79,6 @@ const AnalyticsDashboard = () => {
 
   return (
     <div className="p-4 bg-gray-100">
-      {/* Responsive Grid: Stacks to 2 columns on small screens, then expands */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-8 gap-3">
         {metrics.map((metric) => (
           <div key={metric.name} className="bg-white p-3 rounded-lg shadow-md flex flex-col items-center justify-center aspect-square">

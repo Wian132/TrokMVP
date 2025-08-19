@@ -1,11 +1,12 @@
+// src/app/(shell)/layout.tsx
 'use client';
 
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import Sidebar from '@/components/Sidebar';
 import { createClient } from '@/utils/supabase/client';
 import { AuthProvider } from '@/components/AuthContext';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import Chatbot from '@/components/Chatbot';
 
 export default function ShellLayout({
@@ -15,9 +16,36 @@ export default function ShellLayout({
 }) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSidebarOpen, setSidebarOpen] = useState(false); // State for mobile sidebar
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
   const supabase = createClient();
   const router = useRouter();
+  const pathname = usePathname();
+
+  const pageTitle = useMemo(() => {
+    const routeTitles: Record<string, string> = {
+      '/admin/dashboard': 'Dashboard',
+      '/admin/clients': 'Manage Clients',
+      '/admin/workers': 'Manage Workers',
+      '/admin/link-workers': 'Link Worker Names',
+      '/admin/trucks': 'Fleet Management',
+      '/admin/trips': 'View Truck Trips',
+      '/admin/my-shops': 'Manage My Shops',
+      '/client/dashboard': 'Dashboard',
+      '/client/my-shops': 'My Shops',
+      '/worker/dashboard': 'Dashboard',
+      '/worker/my-truck': 'My Assigned Truck',
+      '/worker/pre-trip-check': 'Pre-Trip Vehicle Check',
+    };
+    
+    // Find a matching title, including for dynamic child routes
+    for (const route in routeTitles) {
+        if (pathname.startsWith(route)) {
+            return routeTitles[route];
+        }
+    }
+    
+    return 'Dashboard'; // Default title
+  }, [pathname]);
 
 
   useEffect(() => {
@@ -36,6 +64,7 @@ export default function ShellLayout({
       
       if (error || !profile) {
         console.error('Error fetching profile or profile not found:', error);
+        await supabase.auth.signOut();
         router.push('/login');
         return;
       }
@@ -49,15 +78,16 @@ export default function ShellLayout({
   if (isLoading) {
     return (
         <div className="flex items-center justify-center min-h-screen bg-gray-100">
-            <p className="text-lg font-semibold">Loading Session...</p>
+            <div className="text-center">
+                <p className="text-lg font-semibold text-gray-700">Loading Session...</p>
+            </div>
         </div>
     );
   }
 
   return (
     <AuthProvider serverSession={null}>
-      <div className="relative min-h-screen md:flex">
-        {/* Sidebar */}
+      <div className="flex h-screen bg-gray-100 overflow-hidden">
         {userRole && (
             <Sidebar 
                 userRole={userRole} 
@@ -66,15 +96,13 @@ export default function ShellLayout({
             />
         )}
         
-        {/* Main Content */}
-        <div className="flex-1 flex flex-col">
-          <Navbar setSidebarOpen={setSidebarOpen} />
-          <main className="flex-1 overflow-y-auto bg-gray-200 p-4 sm:p-6 md:p-8">
+        <div className="flex-1 flex flex-col relative overflow-hidden">
+          <Navbar setSidebarOpen={setSidebarOpen} pageTitle={pageTitle} />
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
             {children}
           </main>
         </div>
 
-        {/* Chatbot remains fixed */}
         {userRole && <Chatbot userRole={userRole} />}
       </div>
     </AuthProvider>
