@@ -101,10 +101,13 @@ export type Database = {
       }
       pre_trip_checks: {
         Row: {
+          brakes_ok: boolean
           center_mirror_ok: boolean
           checked_at: string
           driver_mirror_ok: boolean
           driver_window_ok: boolean
+          fridge_ok: boolean
+          hooter_ok: boolean
           id: number
           issues_resolved: boolean
           lights_ok: boolean
@@ -119,10 +122,13 @@ export type Database = {
           worker_id: number
         }
         Insert: {
+          brakes_ok?: boolean
           center_mirror_ok?: boolean
           checked_at?: string
           driver_mirror_ok?: boolean
           driver_window_ok?: boolean
+          fridge_ok?: boolean
+          hooter_ok?: boolean
           id?: never
           issues_resolved?: boolean
           lights_ok?: boolean
@@ -137,10 +143,13 @@ export type Database = {
           worker_id: number
         }
         Update: {
+          brakes_ok?: boolean
           center_mirror_ok?: boolean
           checked_at?: string
           driver_mirror_ok?: boolean
           driver_window_ok?: boolean
+          fridge_ok?: boolean
+          hooter_ok?: boolean
           id?: never
           issues_resolved?: boolean
           lights_ok?: boolean
@@ -396,6 +405,7 @@ export type Database = {
           make: string | null
           model: string | null
           next_service_km: number | null
+          notes: string | null
           service_interval_km: number | null
           status: Database["public"]["Enums"]["truck_status"]
           type: string | null
@@ -414,6 +424,7 @@ export type Database = {
           make?: string | null
           model?: string | null
           next_service_km?: number | null
+          notes?: string | null
           service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
@@ -432,6 +443,7 @@ export type Database = {
           make?: string | null
           model?: string | null
           next_service_km?: number | null
+          notes?: string | null
           service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
@@ -562,7 +574,10 @@ export type Database = {
           latest_odometer: number
           license_plate: string
           make: string
+          missing_fields: string[]
           model: string
+          next_service_km: number
+          notes: string
           status: string
           total_trips: number
           worker_name: string
@@ -570,6 +585,10 @@ export type Database = {
         }[]
       }
       link_unmapped_trips: {
+        Args: Record<PropertyKey, never>
+        Returns: undefined
+      }
+      update_trucks_needs_attention: {
         Args: Record<PropertyKey, never>
         Returns: undefined
       }

@@ -73,12 +73,8 @@ function findHeaderRow(rows: (string | number | null)[][]): { headerRow: (string
 
 // --- Specialized Parsers ---
 
-function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum: number, licensePlate: string): TripInsert[] {
-    const targetVehicles = ['KBD363MP', 'HGN109MP'];
-    const isTargetVehicle = targetVehicles.includes(licensePlate.toUpperCase());
+function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum: number): TripInsert[] {
 
-    if (isTargetVehicle) console.log(`\n[DEBUG] Starting to parse sheet for ${licensePlate}.`);
-    
     const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
     if (dataStartIndex === -1) return [];
 
@@ -98,11 +94,6 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
         const odometer = cleanAndParseFloat(row[odoIndex]);
         const litres = cleanAndParseFloat(row[litresIndex]);
 
-        if (isTargetVehicle) {
-            console.log(`[${licensePlate}] Processing row ${i + 1}: Raw Date='${row[dateIndex]}', Raw Odo='${row[odoIndex]}', Raw Litres='${row[litresIndex]}'`);
-            console.log(`           ↳ Parsed: Date=${date?.toISOString()}, Odometer=${odometer}, Litres=${litres}`);
-        }
-
         if (date && (!isNaN(odometer) || !isNaN(litres))) {
             validRows.push({
                 date,
@@ -111,13 +102,10 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
                 litres: litres,
                 driver: String(row[driverIndex] || 'N/A').trim(),
             });
-        } else if (isTargetVehicle) {
-            console.log(`           ↳ SKIPPING Row ${i + 1} due to invalid date or missing odo/litres.`);
         }
     }
 
     if (validRows.length === 0) return [];
-    if (isTargetVehicle) console.log(`[${licensePlate}] Found ${validRows.length} valid rows to process.`);
 
     validRows.sort((a, b) => {
         if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime();
@@ -127,59 +115,36 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
     const trips: TripInsert[] = [];
     for (let i = 0; i < validRows.length; i++) {
         const currentRow = validRows[i];
-        let totalKm = currentRow.distance_from_sheet;
+        let totalKm: number | null = null;
         
-        // --- NEW: Handle negative odometer readings from the sheet ---
-        if (currentRow.opening_km < 0) {
-            if (isTargetVehicle) {
-                console.log(`[${licensePlate}] SANITIZING trip on ${currentRow.date.toISOString().slice(0,10)}. Negative Odo found: ${currentRow.opening_km}. Treating as a fuel-only entry.`);
-            }
-            // Neutralize the entry but keep the litres
-            trips.push({
-                truck_id: truckIdNum,
-                trip_date: currentRow.date.toISOString(),
-                opening_km: 0, // Set to 0 or a sensible default
-                total_km: 0,
-                closing_km: 0,
-                liters_filled: isNaN(currentRow.litres) ? null : currentRow.litres,
-                worker_name: currentRow.driver,
-                is_hours_based: false,
-                notes: `Sanitized: Original Odo was ${currentRow.opening_km}`
-            });
-            continue; // Skip the normal processing for this row
-        }
+        const isLastRow = i === validRows.length - 1;
 
-        if (isNaN(currentRow.opening_km) && i > 0) {
-            const prevRow = trips[i - 1];
-            if (prevRow.closing_km) {
-                currentRow.opening_km = prevRow.closing_km;
+        if (isLastRow) {
+            totalKm = 0;
+        } else {
+            const nextRow = validRows[i + 1];
+            if (!isNaN(nextRow.opening_km) && !isNaN(currentRow.opening_km) && nextRow.opening_km > currentRow.opening_km) {
+                totalKm = nextRow.opening_km - currentRow.opening_km;
             }
         }
 
-        if (isNaN(totalKm) || totalKm <= 0) {
-            if (i < validRows.length - 1) {
-                const nextRow = validRows[i + 1];
-                if (!isNaN(nextRow.opening_km) && !isNaN(currentRow.opening_km)) {
-                    totalKm = nextRow.opening_km - currentRow.opening_km;
-                }
-            } else {
-                totalKm = 0;
-            }
+        if (totalKm === null && !isNaN(currentRow.distance_from_sheet) && currentRow.distance_from_sheet > 0) {
+            totalKm = currentRow.distance_from_sheet;
+        }
+
+        if (totalKm === null) {
+            totalKm = 0;
         }
         
         if (totalKm < 0 || totalKm > 5000) {
-            if (isTargetVehicle) {
-                console.log(`[${licensePlate}] SANITIZING trip on ${currentRow.date.toISOString().slice(0,10)} with Odo ${currentRow.opening_km}. Problematic km_diff: ${totalKm}. Setting km to 0.`);
-            }
             totalKm = 0;
         }
-
+        
         trips.push({
             truck_id: truckIdNum,
             trip_date: currentRow.date.toISOString(),
             opening_km: isNaN(currentRow.opening_km) ? null : currentRow.opening_km,
             total_km: totalKm,
-            closing_km: isNaN(currentRow.opening_km) ? null : currentRow.opening_km + totalKm,
             liters_filled: isNaN(currentRow.litres) ? null : currentRow.litres,
             worker_name: currentRow.driver,
             is_hours_based: false,
@@ -255,9 +220,6 @@ export async function handleImport(formData: FormData): Promise<{ success: boole
 
     for (const sheetName of workbook.SheetNames) {
         const license_plate = sheetName.trim();
-        const targetVehicles = ['KBD363MP', 'HGN109MP'];
-        const isTargetVehicle = targetVehicles.includes(license_plate.toUpperCase());
-
         const sheet = workbook.Sheets[sheetName];
         if (!sheet) continue;
 
@@ -278,29 +240,19 @@ export async function handleImport(formData: FormData): Promise<{ success: boole
         if (lowerCaseReg.includes('forklift') || lowerCaseReg.includes('lxc821mp')) {
             tripsToInsert = parseHoursSheet(jsonData, truckIdNum);
         } else {
-            tripsToInsert = parseStandardKmSheet(jsonData, truckIdNum, license_plate);
+            tripsToInsert = parseStandardKmSheet(jsonData, truckIdNum);
         }
         
         const finalTrips = tripsToInsert.filter(trip => trip.trip_date && new Date(trip.trip_date) >= importStartDate);
 
         if (finalTrips.length > 0) {
-            if (isTargetVehicle) console.log(`\n[${license_plate}] DUPLICATE CHECK ---`);
             const { data: existingTrips } = await supabase.from("truck_trips").select("trip_date, opening_km").eq("truck_id", truckIdNum);
-            
             const existingTripSet = new Set(existingTrips?.map(t => `${new Date(t.trip_date!).toISOString().split('T')[0]}_${t.opening_km}`) || []);
-            if (isTargetVehicle) console.log(`[${license_plate}] Found ${existingTripSet.size} existing trip keys in DB.`);
-            
             const newTrips = finalTrips.filter(trip => {
                 const tripKey = `${new Date(trip.trip_date!).toISOString().split('T')[0]}_${trip.opening_km}`;
-                const isDuplicate = existingTripSet.has(tripKey);
-                if (isTargetVehicle) {
-                    console.log(`[${license_plate}] Checking trip key: '${tripKey}'. Is duplicate? -> ${isDuplicate}`);
-                }
-                return !isDuplicate;
+                return !existingTripSet.has(tripKey);
             });
             
-            if (isTargetVehicle) console.log(`[${license_plate}] After filtering, ${newTrips.length} trips will be inserted.`);
-
             if (newTrips.length > 0) {
                 const { error } = await supabase.from("truck_trips").insert(newTrips);
                 if (error) {

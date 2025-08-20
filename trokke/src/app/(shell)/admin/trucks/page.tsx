@@ -35,12 +35,15 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-import { Trash2, PlusCircle, ChevronsUpDown, Info } from 'lucide-react'
-import { ArrowPathIcon } from '@heroicons/react/24/outline'
+// Corrected import: Removed ArrowUpTrayIcon from here
+import { Trash2, PlusCircle, ChevronsUpDown, Info, AlertTriangle } from 'lucide-react'
+// Corrected import: Added ArrowUpTrayIcon here
+import { ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 import { cn } from '@/lib/utils'
+import { handleImport } from '@/lib/import-actions'
 
-type TruckCategory = '30 palette' | '16 palette' | 'equipment' | 'other' | null;
+type TruckCategory = '30 palette' | '16 palette' | 'equipment' | 'other' | 'needs attention' | null;
 
 type TruckDetails = {
   id: string;
@@ -53,7 +56,15 @@ type TruckDetails = {
   latest_km_per_liter: number | null;
   total_trips: number;
   is_hours_based: boolean;
+  missing_fields: string[] | null;
+  next_service_km: number | null; // This holds both km and hours values
+  has_pre_trip_issues: boolean;
 };
+
+type RpcTruckDetails = Omit<TruckDetails, 'has_pre_trip_issues'> & {
+  has_pre_trip_issues?: boolean;
+};
+
 
 type FilterState = {
     category: string;
@@ -69,6 +80,7 @@ export default function TrucksPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0)
   const [filters, setFilters] = useState<FilterState>({
@@ -113,7 +125,12 @@ export default function TrucksPage() {
         setNotification({ title: 'Error', message: 'Could not fetch truck data.' });
         setTrucks([])
       } else {
-        setTrucks(data as TruckDetails[])
+        const trucksFromRpc = data as RpcTruckDetails[];
+        const trucksWithDefaults = trucksFromRpc.map(truck => ({
+            ...truck,
+            has_pre_trip_issues: truck.has_pre_trip_issues || false,
+        }));
+        setTrucks(trucksWithDefaults as TruckDetails[]);
       }
       
       setLoading(false)
@@ -124,6 +141,11 @@ export default function TrucksPage() {
   const handleAddTruck = useCallback(() => {
     triggerRefresh();
     setNotification({ title: 'Success', message: 'New vehicle has been added.' });
+  }, [triggerRefresh]);
+
+  const handleImportTrips = useCallback(() => {
+    triggerRefresh();
+    setNotification({ title: 'Success', message: 'Trip data has been imported.' });
   }, [triggerRefresh]);
 
   const handleDeleteTruck = useCallback(async (truckId: string) => {
@@ -162,13 +184,31 @@ export default function TrucksPage() {
     });
   }, [trucks, searchTerm, filters]);
 
+  const isServiceDueSoon = (truck: TruckDetails) => {
+    if (truck.next_service_km && truck.latest_odometer) {
+        const diff = truck.next_service_km - truck.latest_odometer;
+        const threshold = truck.is_hours_based ? 200 : 1000;
+        return diff <= threshold;
+    }
+    return false;
+  };
 
-  const categorizedTrucks = useMemo(() => ({
-      '30 palette': filteredTrucks.filter(t => t.category === '30 palette'),
-      '16 palette': filteredTrucks.filter(t => t.category === '16 palette'),
-      'equipment': filteredTrucks.filter(t => t.category === 'equipment'),
-      'other': filteredTrucks.filter(t => t.category === 'other' || !t.category),
-  }), [filteredTrucks]);
+  const categorizedTrucks = useMemo(() => {
+    const needsAttentionTrucks = filteredTrucks.filter(t => 
+        t.category === 'needs attention' || 
+        isServiceDueSoon(t) ||
+        t.has_pre_trip_issues
+    );
+    const attentionIds = new Set(needsAttentionTrucks.map(t => t.id));
+
+    return {
+        'needs attention': needsAttentionTrucks,
+        '30 palette': filteredTrucks.filter(t => t.category === '30 palette' && !attentionIds.has(t.id)),
+        '16 palette': filteredTrucks.filter(t => t.category === '16 palette' && !attentionIds.has(t.id)),
+        'equipment': filteredTrucks.filter(t => t.category === 'equipment' && !attentionIds.has(t.id)),
+        'other': filteredTrucks.filter(t => (t.category === 'other' || !t.category) && !attentionIds.has(t.id)),
+    };
+  }, [filteredTrucks]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64"><ArrowPathIcon className="animate-spin h-8 w-8 text-gray-500" /> <span className="ml-4 text-gray-700">Loading Fleet Data...</span></div>
@@ -178,14 +218,24 @@ export default function TrucksPage() {
     <div className="space-y-6 p-4 md:p-8">
         <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold tracking-tight">Fleet Management</h2>
-            <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
-                <DialogTrigger asChild>
-                    <Button className="bg-green-600 hover:bg-green-700">
-                        <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
-                    </Button>
-                </DialogTrigger>
-                <AddTruckModal onTruckAdded={handleAddTruck} closeModal={() => setIsAddModalOpen(false)} />
-            </Dialog>
+            <div className="flex items-center gap-2">
+                <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700">
+                            <ArrowUpTrayIcon className="mr-2 h-4 w-4" /> Import Trips
+                        </Button>
+                    </DialogTrigger>
+                    <ImportTripsModal onTripsImported={handleImportTrips} closeModal={() => setIsImportModalOpen(false)} setNotification={setNotification} />
+                </Dialog>
+                <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+                    <DialogTrigger asChild>
+                        <Button className="bg-green-600 hover:bg-green-700">
+                            <PlusCircle className="mr-2 h-4 w-4" /> Add Vehicle
+                        </Button>
+                    </DialogTrigger>
+                    <AddTruckModal onTruckAdded={handleAddTruck} closeModal={() => setIsAddModalOpen(false)} />
+                </Dialog>
+            </div>
         </div>
 
         <AnalyticsCard onRecalculate={triggerRefresh} setNotification={setNotification} />
@@ -193,13 +243,13 @@ export default function TrucksPage() {
         <FilterBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} filters={filters} setFilters={setFilters} />
 
         <div className="space-y-6">
+            <TruckCategorySection title="Needs Attention" trucks={categorizedTrucks['needs attention']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
             <TruckCategorySection title="30 Palette Trucks" trucks={categorizedTrucks['30 palette']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
             <TruckCategorySection title="16 Palette Trucks" trucks={categorizedTrucks['16 palette']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
             <TruckCategorySection title="Equipment" trucks={categorizedTrucks['equipment']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
             <TruckCategorySection title="Other" trucks={categorizedTrucks['other']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
         </div>
 
-        {/* Notification Modal */}
         <Dialog open={!!notification} onOpenChange={() => setNotification(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -214,6 +264,71 @@ export default function TrucksPage() {
     </div>
   )
 }
+
+// --- Import Trips Modal Component ---
+function ImportTripsModal({ onTripsImported, closeModal, setNotification }: { onTripsImported: () => void, closeModal: () => void, setNotification: (notif: { title: string; message: string }) => void }) {
+    const [isImporting, setIsImporting] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!fileInputRef.current?.files?.length) {
+            setNotification({ title: 'No File', message: 'Please select a file to import.' });
+            return;
+        }
+        
+        setIsImporting(true);
+        const formData = new FormData();
+        formData.append('file', fileInputRef.current.files[0]);
+
+        const result = await handleImport(formData);
+
+        setIsImporting(false);
+        setNotification({ 
+            title: result.success ? 'Import Successful' : 'Import Failed', 
+            message: result.message 
+        });
+
+        if (result.success) {
+            onTripsImported();
+            closeModal();
+        }
+    };
+
+    return (
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Import Trip Data</DialogTitle>
+                <DialogDescription>
+                    Upload an Excel file to import trip histories for your vehicles. This will add new trips without creating new vehicles.
+                </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+                <div>
+                    <Label htmlFor="trip-file">Excel File</Label>
+                    <Input id="trip-file" name="file" type="file" accept=".xlsx, .xls" ref={fileInputRef} required />
+                </div>
+                <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
+                    <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
+                        {isImporting ? (
+                            <>
+                                <ArrowPathIcon className="animate-spin h-4 w-4 mr-2" />
+                                Importing...
+                            </>
+                        ) : (
+                            <>
+                                <ArrowUpTrayIcon className="mr-2 h-4 w-4" />
+                                Start Import
+                            </>
+                        )}
+                    </Button>
+                </DialogFooter>
+            </form>
+        </DialogContent>
+    );
+}
+
 
 // --- Analytics Card Component ---
 function AnalyticsCard({ onRecalculate, setNotification }: { onRecalculate: () => void, setNotification: (notif: { title: string; message: string }) => void }) {
@@ -252,6 +367,18 @@ function AnalyticsCard({ onRecalculate, setNotification }: { onRecalculate: () =
         }
     };
 
+    const handleNeedsAttention = async () => {
+        try {
+            const { error } = await supabase.rpc('update_trucks_needs_attention');
+            if (error) throw error;
+            setNotification({ title: 'Success', message: 'Trucks needing attention have been updated.' });
+            onRecalculate();
+        } catch (error) {
+            console.error('Error updating trucks needing attention:', error);
+            setNotification({ title: 'Error', message: 'Failed to update trucks needing attention.' });
+        }
+    }
+
     return (
         <Card>
             <CardHeader>
@@ -276,6 +403,9 @@ function AnalyticsCard({ onRecalculate, setNotification }: { onRecalculate: () =
                     ) : (
                         'Recalculate Averages'
                     )}
+                </Button>
+                <Button onClick={handleNeedsAttention} className="mt-4 sm:mt-0 self-start sm:self-end bg-yellow-500 hover:bg-yellow-600 text-white min-w-[180px]">
+                    Check for Incomplete Data
                 </Button>
             </CardContent>
         </Card>
@@ -312,6 +442,7 @@ function FilterBar({ searchTerm, setSearchTerm, filters, setFilters }: FilterBar
                         <SelectItem value="16 palette">16 Palette</SelectItem>
                         <SelectItem value="equipment">Equipment</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="needs attention">Needs Attention</SelectItem>
                     </SelectContent>
                 </Select>
                 <div className="flex items-center gap-2">
@@ -370,7 +501,6 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
 
         if (error) {
             console.error('Error adding truck:', error)
-            // A more robust solution would be to show an error message inside the modal
         } else if (data) {
             onTruckAdded()
             closeModal()
@@ -426,15 +556,35 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
     const odoUnit = is_hours_based ? ' hrs' : ' km';
     
     const categoryTriggerClass = cn(
-      "w-32 text-xs h-8 text-black", // Base classes
+      "w-32 text-xs h-8 text-black",
       is_hours_based 
         ? "bg-yellow-300 hover:bg-yellow-400 focus:ring-yellow-400" 
         : "bg-green-300 hover:bg-green-400 focus:ring-green-400"
     );
+
+    const categoryContentClass = cn(
+        "text-black",
+        is_hours_based ? "bg-yellow-100" : "bg-green-100"
+    );
     
+    const renderServiceDue = () => {
+        if (truck.next_service_km && truck.latest_odometer) {
+            const kmUntilService = truck.next_service_km - truck.latest_odometer;
+            const threshold = truck.is_hours_based ? 200 : 1000;
+            
+            if (kmUntilService <= 0) {
+                return <span className="font-semibold text-red-600">{kmUntilService.toLocaleString()}{odoUnit}</span>;
+            }
+            if (kmUntilService <= threshold) {
+                return <span className="font-semibold text-orange-500">{kmUntilService.toLocaleString()}{odoUnit}</span>;
+            }
+            return <span className="font-semibold text-gray-900">{kmUntilService.toLocaleString()}{odoUnit}</span>;
+        }
+        return <span className="font-semibold text-gray-900">N/A</span>;
+    };
+
     return (
         <Card className="flex flex-col shadow-md hover:shadow-lg transition-shadow bg-white group">
-            {/* The Link wraps the main content, but not the action buttons */}
             <Link href={`/admin/trucks/${truck.id}`} className="flex-grow">
                 <CardHeader>
                     <div className="space-y-1">
@@ -455,27 +605,49 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
                         <span className="text-gray-600">{odoLabel}</span>
                         <span className="font-semibold text-gray-900">{latest_odometer ? `${latest_odometer.toLocaleString()}${odoUnit}` : 'N/A'}</span>
                     </div>
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-600">Service Due In</span>
+                        {renderServiceDue()}
+                    </div>
                      <div className="flex justify-between text-sm pt-2 border-t mt-2">
                         <span className="text-gray-600">Driver</span>
                         <span className="font-semibold text-gray-900">{truck.worker_name || 'Unassigned'}</span>
                     </div>
+                    {(truck.has_pre_trip_issues || (truck.category === 'needs attention' && truck.missing_fields && truck.missing_fields.length > 0)) && (
+                        <div className="mt-3 pt-3 border-t border-dashed border-red-300">
+                            <div className="flex items-start text-red-600">
+                                <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
+                                <div>
+                                    {truck.has_pre_trip_issues && (
+                                        <p className="text-xs font-bold">Pre-trip check indicates issues</p>
+                                    )}
+                                    {truck.category === 'needs attention' && truck.missing_fields && truck.missing_fields.length > 0 && (
+                                        <>
+                                            <p className="text-xs font-bold mt-1">Missing Info:</p>
+                                            <p className="text-xs leading-tight">{truck.missing_fields.join(', ')}</p>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </CardContent>
             </Link>
-            {/* Action buttons are outside the Link to prevent nested interactive elements */}
             <div className="flex items-center gap-1 p-4 pt-0">
                 <Select value={truck.category || 'other'} onValueChange={(value) => onUpdateCategory(truck.id, value as TruckCategory)}>
                     <SelectTrigger className={categoryTriggerClass}>
                         <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className={categoryContentClass}>
                         <SelectItem value="30 palette">30 Palette</SelectItem>
                         <SelectItem value="16 palette">16 Palette</SelectItem>
                         <SelectItem value="equipment">Equipment</SelectItem>
                         <SelectItem value="other">Other</SelectItem>
+                        <SelectItem value="needs attention">Needs Attention</SelectItem>
                     </SelectContent>
                 </Select>
                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-red-500 ml-auto" onClick={(e) => {
-                    e.stopPropagation(); // Prevent link navigation when clicking delete
+                    e.stopPropagation();
                     onDelete(truck.id)
                 }}>
                     <Trash2 size={18} />

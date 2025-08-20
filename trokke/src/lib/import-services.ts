@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx';
 import { type Database } from "@/types/supabase";
 
 type ServiceInsert = Database['public']['Tables']['services']['Insert'];
+type TruckUpdate = Database['public']['Tables']['trucks']['Update'];
 
 // --- Helper Functions ---
 
@@ -115,6 +116,33 @@ export async function handleBulkServiceImport(formData: FormData): Promise<{ suc
 
             const jsonData: (string | number | null)[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: null });
             if (jsonData.length < 2) continue;
+            
+            // --- MODIFICATION START: Extract vehicle details and prepare update payload ---
+            const truckUpdatePayload: TruckUpdate = {};
+
+            // Search backwards from the end of the sheet to find VIN, Make, and Model
+            for (let i = jsonData.length - 1; i > 0; i--) { 
+                const row = jsonData[i];
+                const cellA = row && row[0] ? String(row[0]).trim().toUpperCase() : '';
+
+                if (cellA === 'VIN') {
+                    const vin = row[1] ? String(row[1]).trim() : null;
+                    if (vin) truckUpdatePayload.vin = vin;
+
+                    // The row above the VIN row should contain make and model
+                    const makeModelRow = jsonData[i - 1];
+                    if (makeModelRow) {
+                        const make = makeModelRow[0] ? String(makeModelRow[0]).trim() : null;
+                        const model = makeModelRow[1] ? String(makeModelRow[1]).trim() : null;
+                        if (make) truckUpdatePayload.make = make;
+                        if (model) truckUpdatePayload.model = model;
+                    }
+                    
+                    // Found the data, no need to loop further for this sheet
+                    break; 
+                }
+            }
+            // --- MODIFICATION END ---
 
             const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
             if (dataStartIndex === -1) continue;
@@ -128,13 +156,12 @@ export async function handleBulkServiceImport(formData: FormData): Promise<{ suc
             const nextServiceIndex = headers.indexOf('next service');
 
             const servicesToInsert: ServiceInsert[] = [];
-            const truckUpdatePayload: { next_service_km?: number, service_interval_km?: number } = {};
 
             for (let i = dataStartIndex; i < jsonData.length; i++) {
                 const row = jsonData[i];
                 if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
                 
-                // --- NEW: Extract Service Interval ---
+                // Extract Service Interval
                 const serviceIntervalRow = row.find(cell => typeof cell === 'string' && cell.toUpperCase().includes('SERVICE INTERVAL'));
                 if (serviceIntervalRow) {
                     const interval = cleanAndParseFloat(serviceIntervalRow);
@@ -142,7 +169,6 @@ export async function handleBulkServiceImport(formData: FormData): Promise<{ suc
                         truckUpdatePayload.service_interval_km = interval;
                     }
                 }
-                // --- End of new section ---
 
                 const expenseDate = parseDate(row[expenseDateIndex]);
                 if (!expenseDate || expenseDate < importStartDate) continue;
@@ -180,7 +206,8 @@ export async function handleBulkServiceImport(formData: FormData): Promise<{ suc
                     }
                 }
             }
-
+            
+            // --- MODIFICATION: Update truck with VIN, make, model, and service intervals ---
             if (Object.keys(truckUpdatePayload).length > 0) {
                  const { error: updateError } = await supabase
                     .from('trucks')
@@ -216,7 +243,7 @@ export async function handleBulkServiceImport(formData: FormData): Promise<{ suc
             }
         }
 
-        return { success: true, message: `Import complete! Processed ${sheetsProcessed} sheets and imported ${totalServicesImported} new service records.` };
+        return { success: true, message: `Import complete! Processed ${sheetsProcessed} sheets and imported ${totalServicesImported} new service records. Vehicle details were also updated.` };
 
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
