@@ -22,12 +22,13 @@ export default function ShellLayout({
   const pathname = usePathname();
 
   const pageTitle = useMemo(() => {
+    // UPDATED: New and renamed titles
     const routeTitles: Record<string, string> = {
-      '/admin/dashboard': 'Dashboard',
+      '/admin/trucks': 'Fleet Overview',
+      '/admin/fleet-analytics': 'Fleet Analytics',
       '/admin/clients': 'Manage Clients',
       '/admin/workers': 'Manage Workers',
       '/admin/link-workers': 'Link Worker Names',
-      '/admin/trucks': 'Fleet Management',
       '/admin/trips': 'View Truck Trips',
       '/admin/my-shops': 'Manage My Shops',
       '/client/dashboard': 'Dashboard',
@@ -98,7 +99,7 @@ export default function ShellLayout({
         
         <div className="flex-1 flex flex-col relative overflow-hidden">
           <Navbar setSidebarOpen={setSidebarOpen} pageTitle={pageTitle} />
-          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          <main className="flex-1 overflow-y-auto">
             {children}
           </main>
         </div>

@@ -31,8 +31,9 @@ export default async function HomePage() {
 
     switch (userRole) {
       case 'admin':
-        console.log('[HomePage] Redirecting to /admin/dashboard');
-        redirect('/admin/dashboard');
+        // UPDATED: Redirect to the trucks page, which is our new main overview.
+        console.log('[HomePage] Redirecting to /admin/trucks');
+        redirect('/admin/trucks');
         break;
       case 'worker':
         console.log('[HomePage] Redirecting to /worker/dashboard');
