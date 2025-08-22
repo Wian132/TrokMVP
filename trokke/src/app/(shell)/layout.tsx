@@ -36,6 +36,9 @@ export default function ShellLayout({
       '/worker/dashboard': 'Dashboard',
       '/worker/my-truck': 'My Assigned Truck',
       '/worker/pre-trip-check': 'Pre-Trip Vehicle Check',
+      '/worker/log-trip': 'Log Trip',
+      '/refueler/dashboard': 'Refueler Dashboard',
+      '/refueler/refuels': 'Log Refuel',
     };
     
     // Find a matching title, including for dynamic child routes

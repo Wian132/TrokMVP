@@ -4,11 +4,13 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuth } from '@/components/AuthContext';
-import { TruckIcon, ShieldCheckIcon, ExclamationTriangleIcon, LightBulbIcon, SunIcon, CogIcon, BeakerIcon, CloudIcon, ViewfinderCircleIcon, SpeakerWaveIcon, StopCircleIcon, FireIcon } from '@heroicons/react/24/outline';
+import { type Database } from '@/types/supabase';
+import { TruckIcon, ExclamationTriangleIcon, LightBulbIcon, SunIcon, CogIcon, BeakerIcon, CloudIcon, ViewfinderCircleIcon, SpeakerWaveIcon, StopCircleIcon, FireIcon, BookOpenIcon, PencilIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
 
 // --- Type Definitions ---
 type TruckInfo = { id: number; license_plate: string; make: string | null; model: string | null; };
 type WorkerInfo = { id: number; };
+type PreTripCheck = Database['public']['Tables']['pre_trip_checks']['Row'];
 type TireState = {
   driver_side_ok: boolean;
   passenger_side_ok: boolean;
@@ -50,11 +52,14 @@ export default function PreTripCheckPage() {
 
   const [truck, setTruck] = useState<TruckInfo | null>(null);
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
-  const [hasSubmittedToday, setHasSubmittedToday] = useState(false);
+  const [recentChecks, setRecentChecks] = useState<PreTripCheck[]>([]);
+  const [todaysCheck, setTodaysCheck] = useState<PreTripCheck | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [checkState, setCheckState] = useState<CheckState>(defaultCheckState);
+
+  const isEditing = !!todaysCheck;
 
   const fetchInitialData = useCallback(async () => {
     if (!user) return;
@@ -70,35 +75,33 @@ export default function PreTripCheckPage() {
       if (truckError || !truckData) throw new Error("You are not assigned to a truck.");
       setTruck(truckData);
 
-      const today = new Date().toISOString().slice(0, 10);
-      const { data: todayCheck } = await supabase.from('pre_trip_checks').select('id').eq('truck_id', truckData.id).gte('checked_at', `${today}T00:00:00Z`).limit(1);
+      const { data: checksData, error: checksError } = await supabase.from('pre_trip_checks').select('*').eq('truck_id', truckData.id).order('checked_at', { ascending: false }).limit(5);
+      if (checksError) throw new Error(checksError.message);
       
-      if (todayCheck && todayCheck.length > 0) {
-        setHasSubmittedToday(true);
+      setRecentChecks(checksData || []);
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const mostRecentCheck = checksData && checksData.length > 0 ? checksData[0] : null;
+
+      if (mostRecentCheck && new Date(mostRecentCheck.checked_at) >= today) {
+        setTodaysCheck(mostRecentCheck);
+        setCheckState({ ...defaultCheckState, ...mostRecentCheck, tires_ok: (mostRecentCheck.tires_ok as TireState) || defaultTireState, other_issues: mostRecentCheck.other_issues ?? '' });
       } else {
-        // This logic correctly fetches the last check to pre-populate the form
-        const { data: lastCheck } = await supabase.from('pre_trip_checks').select('*').eq('truck_id', truckData.id).order('checked_at', { ascending: false }).limit(1).single();
-        if (lastCheck) {
-          setCheckState({
-            ...defaultCheckState,
-            ...lastCheck,
-            tires_ok: (lastCheck.tires_ok as TireState) || defaultTireState,
-            // UPDATED: Now carries over previous issues
-            other_issues: lastCheck.other_issues || '', 
-          });
+        setTodaysCheck(null);
+        if (mostRecentCheck) {
+            // Pre-fill from the last check if one exists
+            setCheckState({ ...defaultCheckState, ...mostRecentCheck, tires_ok: (mostRecentCheck.tires_ok as TireState) || defaultTireState, other_issues: '' });
+        } else {
+            setCheckState(defaultCheckState);
         }
       }
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        setError(err.message);
-      } else {
-        setError("An unknown error occurred while fetching data.");
-      }
+      setError(err instanceof Error ? err.message : "An unknown error occurred.");
     } finally {
       setLoading(false);
     }
   }, [user, supabase]);
-
 
   useEffect(() => {
     fetchInitialData();
@@ -109,11 +112,14 @@ export default function PreTripCheckPage() {
   };
 
   const handleTireToggle = (side: keyof TireState) => {
-    setCheckState(prev => ({
-      ...prev,
-      tires_ok: { ...prev.tires_ok, [side]: !prev.tires_ok[side] }
-    }));
+    setCheckState(prev => ({ ...prev, tires_ok: { ...prev.tires_ok, [side]: !prev.tires_ok[side] } }));
   };
+  
+  const handleEditClick = (check: PreTripCheck) => {
+      setTodaysCheck(check);
+      setCheckState({ ...defaultCheckState, ...check, tires_ok: (check.tires_ok as TireState) || defaultTireState, other_issues: check.other_issues ?? '' });
+      window.scrollTo(0, 0);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -121,44 +127,79 @@ export default function PreTripCheckPage() {
       setError("Cannot submit: Missing truck or worker information.");
       return;
     }
-    setStatusMessage("Submitting your checklist...");
+    setStatusMessage(isEditing ? "Updating checklist..." : "Submitting your checklist...");
     setError(null);
 
-    // This correctly INSERTS a new row into the database on every submission.
-    const { error: insertError } = await supabase.from('pre_trip_checks').insert({
-      truck_id: truck.id,
-      worker_id: worker.id,
-      ...checkState
-    });
+    // Create a clean payload from the state to avoid sending extra fields like 'id'
+    const payload = {
+        windshield_ok: checkState.windshield_ok,
+        driver_window_ok: checkState.driver_window_ok,
+        passenger_window_ok: checkState.passenger_window_ok,
+        driver_mirror_ok: checkState.driver_mirror_ok,
+        passenger_mirror_ok: checkState.passenger_mirror_ok,
+        center_mirror_ok: checkState.center_mirror_ok,
+        lights_ok: checkState.lights_ok,
+        oil_level_ok: checkState.oil_level_ok,
+        water_level_ok: checkState.water_level_ok,
+        hooter_ok: checkState.hooter_ok,
+        brakes_ok: checkState.brakes_ok,
+        fridge_ok: checkState.fridge_ok,
+        tires_ok: checkState.tires_ok,
+        other_issues: checkState.other_issues,
+    };
 
-    if (insertError) {
-      setError(`Submission failed: ${insertError.message}`);
-      setStatusMessage(null);
+    if (isEditing && todaysCheck) {
+        // --- UPDATE LOGIC ---
+        const { error: updateError } = await supabase.from('pre_trip_checks').update({ ...payload, issues_resolved: false }).eq('id', todaysCheck.id);
+        if (updateError) {
+            setError(`Update failed: ${updateError.message}`);
+            setStatusMessage(null);
+        } else {
+            setStatusMessage("Checklist updated successfully!");
+            fetchInitialData();
+        }
     } else {
-      setStatusMessage("Checklist submitted successfully!");
-      setHasSubmittedToday(true);
+        // --- INSERT LOGIC ---
+        const { error: insertError } = await supabase.from('pre_trip_checks').insert({ truck_id: truck.id, worker_id: worker.id, ...payload });
+        if (insertError) {
+            setError(`Submission failed: ${insertError.message}`);
+            setStatusMessage(null);
+        } else {
+            setStatusMessage("Checklist submitted successfully!");
+            fetchInitialData();
+        }
     }
   };
+  
+  const isCheckEditable = (checkDate: string): boolean => {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      return new Date(checkDate) > twentyFourHoursAgo;
+  }
 
+  const getIssuesSummary = (check: PreTripCheck): string => {
+      const issues = Object.entries(check).filter(([key, value]) => key.endsWith('_ok') && value === false);
+      if (check.other_issues) issues.push(['other_issues', check.other_issues]);
+      if (issues.length === 0) return 'No issues reported';
+      return `${issues.length} issue(s) reported`;
+  }
 
   if (loading) return <div className="p-4 text-center font-semibold">Loading your details...</div>;
   if (error) return <div className="p-4 bg-white rounded-lg shadow-md max-w-md mx-auto text-center text-red-600"><ExclamationTriangleIcon className="h-10 w-10 mx-auto mb-3" /><h2 className="text-lg font-bold">An Error Occurred</h2><p className="text-sm">{error}</p></div>;
-  if (hasSubmittedToday) return <div className="p-4 bg-white rounded-lg shadow-md max-w-md mx-auto text-center text-green-600"><ShieldCheckIcon className="h-10 w-10 mx-auto mb-3" /><h2 className="text-lg font-bold">Checklist Submitted</h2><p className="text-sm">You have already submitted the pre-trip check for <strong>{truck?.license_plate}</strong> today. Thank you!</p></div>;
 
   return (
-    <div className="p-2 sm:p-4 max-w-md mx-auto">
+    <div className="p-2 sm:p-4 max-w-2xl mx-auto space-y-6">
       <div className="bg-white p-4 rounded-lg shadow-md">
         <div className="text-center border-b pb-3 mb-4">
           <TruckIcon className="h-8 w-8 mx-auto text-indigo-600" />
-          <h1 className="text-xl font-bold text-gray-800 mt-1">Pre-Trip Vehicle Check</h1>
+          <h1 className="text-xl font-bold text-gray-800 mt-1">{isEditing ? "Edit Today's Check" : "Pre-Trip Vehicle Check"}</h1>
           <p className="text-sm text-gray-600">For: <strong>{truck?.make} {truck?.model} - {truck?.license_plate}</strong></p>
         </div>
 
-        {statusMessage && !error && <p className="text-blue-600 mb-4 text-center text-sm">{statusMessage}</p>}
+        {statusMessage && <p className="text-blue-600 mb-4 text-center text-sm bg-blue-50 p-3 rounded-md">{statusMessage}</p>}
         
         <form onSubmit={handleSubmit}>
           <div className="space-y-3">
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <CheckSection title="Driver Side">
                 <ChecklistItem icon={SunIcon} label="Window" value={checkState.driver_window_ok} onToggle={() => handleToggle('driver_window_ok')} />
                 <ChecklistItem icon={ViewfinderCircleIcon} label="Mirror" value={checkState.driver_mirror_ok} onToggle={() => handleToggle('driver_mirror_ok')} />
@@ -191,9 +232,46 @@ export default function PreTripCheckPage() {
             <textarea id="other_issues" value={checkState.other_issues} onChange={(e) => setCheckState(p => ({ ...p, other_issues: e.target.value }))} rows={2} className="w-full p-2 border rounded-md text-gray-900 text-sm placeholder-gray-500 shadow-sm focus:ring-indigo-500 focus:border-indigo-500" placeholder="If any item is not OK, please describe the issue here..."/>
           </div>
 
-          <button type="submit" className="w-full mt-4 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-bold text-base disabled:bg-indigo-300">Submit Daily Check</button>
+          <button type="submit" className="w-full mt-4 flex justify-center items-center gap-2 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-bold text-base disabled:bg-indigo-300">
+            {isEditing ? <PencilIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
+            {isEditing ? 'Update Check' : 'Submit Check'}
+          </button>
         </form>
       </div>
+
+      <div className="bg-white p-6 rounded-lg shadow-md">
+         <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><BookOpenIcon className="h-6 w-6 text-indigo-600"/>Recent Check History</h2>
+         <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                    <tr>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Summary</th>
+                        <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                    </tr>
+                </thead>
+                 <tbody className="bg-white divide-y divide-gray-200">
+                    {recentChecks.length > 0 ? recentChecks.map((check, index) => (
+                        <tr key={check.id}>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{new Date(check.checked_at).toLocaleString()}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{getIssuesSummary(check)}</td>
+                            <td className="px-4 py-3 whitespace-nowrap text-right">
+                                {index === 0 && isCheckEditable(check.checked_at) && (
+                                    <button onClick={() => handleEditClick(check)} className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex items-center gap-1 ml-auto">
+                                        <PencilIcon className="h-4 w-4"/> Edit
+                                    </button>
+                                )}
+                            </td>
+                        </tr>
+                    )) : (
+                        <tr>
+                            <td colSpan={3} className="text-center py-4 text-sm text-gray-500">No recent checks found.</td>
+                        </tr>
+                    )}
+                 </tbody>
+            </table>
+         </div>
+       </div>
     </div>
   );
 }

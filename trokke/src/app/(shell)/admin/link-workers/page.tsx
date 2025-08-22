@@ -1,9 +1,8 @@
-// src/app/(shell)/admin/link-workers/page.tsx
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ArrowPathIcon, LinkIcon, ChevronUpDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, LinkIcon, ChevronUpDownIcon, MagnifyingGlassIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
 
 // --- Utility Function for Fuzzy Matching ---
 
@@ -28,10 +27,10 @@ const levenshteinDistance = (a: string, b: string): number => {
 
   for (let j = 1; j <= b.length; j++) {
     for (let i = 1; i <= a.length; i++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      const cost = a[i - 1].toLowerCase() === b[j - 1].toLowerCase() ? 0 : 1;
       matrix[j][i] = Math.min(
-        matrix[j][i - 1] + 1,      // Deletion
-        matrix[j - 1][i] + 1,      // Insertion
+        matrix[j][i - 1] + 1,       // Deletion
+        matrix[j - 1][i] + 1,       // Insertion
         matrix[j - 1][i - 1] + cost // Substitution
       );
     }
@@ -107,7 +106,7 @@ const SearchableDropdown = ({
                 placeholder="Search workers..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-8 p-1.5 border rounded-md"
+                className="w-full pl-8 p-1.5 border rounded-md text-black"
               />
             </div>
           </div>
@@ -138,65 +137,87 @@ const SearchableDropdown = ({
 const LinkWorkersPage = () => {
   const supabase = createClient();
 
-  const [unlinkedNames, setUnlinkedNames] = useState<string[]>([]);
+  const [allNames, setAllNames] = useState<string[]>([]);
   const [workers, setWorkers] = useState<WorkerProfile[]>([]);
+  const [linkedAliases, setLinkedAliases] = useState<Map<string, number>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedWorkerIds, setSelectedWorkerIds] = useState<Record<string, string>>({});
+  const [nameSearchTerm, setNameSearchTerm] = useState('');
 
   const fetchRequiredData = useCallback(async () => {
     setLoading(true);
     setError(null);
 
+    // 1. Fetch ALL distinct worker names from the trips table
     const { data: namesData, error: namesError } = await supabase
       .from('truck_trips')
-      .select('worker_name')
-      .is('worker_id', null)
-      .not('worker_name', 'is', null);
+      .select('worker_name', { count: 'exact', head: false });
 
     if (namesError) {
-      setError(`Failed to fetch unlinked names: ${namesError.message}`);
+      setError(`Failed to fetch trip names: ${namesError.message}`);
       setLoading(false);
       return;
     }
     const uniqueNames = Array.from(new Set(namesData.map(item => item.worker_name).filter(Boolean))) as string[];
-    setUnlinkedNames(uniqueNames);
+    uniqueNames.sort((a, b) => a.localeCompare(b));
+    setAllNames(uniqueNames);
 
+    // 2. Fetch all worker profiles
     const { data: workersData, error: workersError } = await supabase
       .from('workers')
       .select('id, profiles(full_name)');
 
     if (workersError) {
       setError(`Failed to fetch workers: ${workersError.message}`);
-    } else {
-      const formattedWorkers = (workersData as unknown as WorkerWithProfile[])
-        .map(w => ({
-          id: w.id,
-          full_name: w.profiles?.full_name || '',
-        }))
-        .filter(w => w.full_name) // Ensure no workers with empty names are included
-        .sort((a, b) => a.full_name.localeCompare(b.full_name)); // Sort alphabetically
-      
-      setWorkers(formattedWorkers);
-
-      // --- Fuzzy Match Suggestion Logic ---
-      const suggestions: Record<string, string> = {};
-      uniqueNames.forEach(unlinkedName => {
-        let bestMatch: { id: string; distance: number } = { id: '', distance: Infinity };
-        formattedWorkers.forEach(worker => {
-          const distance = levenshteinDistance(unlinkedName.toLowerCase(), worker.full_name.toLowerCase());
-          if (distance < bestMatch.distance) {
-            bestMatch = { id: worker.id.toString(), distance };
-          }
-        });
-        // Suggest a match if it's reasonably close (e.g., distance < 3)
-        if (bestMatch.id && bestMatch.distance < 3) {
-          suggestions[unlinkedName] = bestMatch.id;
-        }
-      });
-      setSelectedWorkerIds(suggestions);
+      setLoading(false);
+      return;
     }
+    const formattedWorkers = (workersData as unknown as WorkerWithProfile[])
+      .map(w => ({
+        id: w.id,
+        full_name: w.profiles?.full_name || '',
+      }))
+      .filter(w => w.full_name)
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    setWorkers(formattedWorkers);
+
+    // 3. Fetch all existing aliases to know which names are already linked
+    const { data: aliasesData, error: aliasesError } = await supabase
+        .from('worker_name_aliases')
+        .select('alias_name, worker_id');
+
+    if (aliasesError) {
+        setError(`Failed to fetch existing aliases: ${aliasesError.message}`);
+        setLoading(false);
+        return;
+    }
+    const aliasMap = new Map(aliasesData.map(a => [a.alias_name, a.worker_id]));
+    setLinkedAliases(aliasMap);
+
+    // 4. Pre-populate dropdowns
+    const selections: Record<string, string> = {};
+    uniqueNames.forEach(name => {
+        if (aliasMap.has(name)) {
+            // If already linked, use the existing link
+            selections[name] = aliasMap.get(name)!.toString();
+        } else {
+            // If not linked, suggest the best match
+            let bestMatch = { id: '', distance: Infinity };
+            formattedWorkers.forEach(worker => {
+                const distance = levenshteinDistance(name, worker.full_name);
+                if (distance < bestMatch.distance) {
+                    bestMatch = { id: worker.id.toString(), distance };
+                }
+            });
+            // Only auto-suggest if the match is reasonably close (e.g., distance < 3)
+            if (bestMatch.id && bestMatch.distance < 3) {
+                selections[name] = bestMatch.id;
+            }
+        }
+    });
+    setSelectedWorkerIds(selections);
 
     setLoading(false);
   }, [supabase]);
@@ -218,31 +239,27 @@ const LinkWorkersPage = () => {
     setStatusMessage(`Linking "${aliasName}"...`);
     setError(null);
 
-    const { error: aliasError } = await supabase
+    // Use upsert to either create a new alias or update an existing one.
+    // The 'alias_name' is the conflict target.
+    const { error: upsertError } = await supabase
       .from('worker_name_aliases')
-      .insert({ alias_name: aliasName, worker_id: parseInt(workerId, 10) });
+      .upsert({ alias_name: aliasName, worker_id: parseInt(workerId, 10) }, { onConflict: 'alias_name' });
 
-    if (aliasError) {
-      if (aliasError.code === '23505') {
-        setError(`Error: The name "${aliasName}" is already linked as an alias. You may need to refresh.`);
-      } else {
-        setError(`Failed to create alias: ${aliasError.message}`);
-      }
+    if (upsertError) {
+      setError(`Failed to save alias: ${upsertError.message}`);
       setStatusMessage(null);
       return;
     }
 
-    const { error: rpcError } = await supabase.rpc('link_worker_trips');
-
-    if (rpcError) {
-      setError(`Failed to update trips: ${rpcError.message}`);
-      setStatusMessage(null);
-      return;
-    }
-
-    setStatusMessage(`Successfully linked "${aliasName}" and updated relevant trips.`);
+    // The database trigger handles updating the trips, so no RPC call is needed here.
+    setStatusMessage(`Successfully saved link for "${aliasName}". Trips will be updated automatically.`);
+    // Refresh the data to show the new link status
     await fetchRequiredData();
   };
+
+  const filteredNames = useMemo(() => {
+    return allNames.filter(name => name.toLowerCase().includes(nameSearchTerm.toLowerCase()));
+  }, [allNames, nameSearchTerm]);
 
   return (
     <div className="p-4 md:p-8 space-y-8">
@@ -271,19 +288,40 @@ const LinkWorkersPage = () => {
       )}
 
       <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold mb-4 text-gray-700">Unlinked Trip Names</h2>
-        <p className="text-sm text-gray-600 mb-6">
-          The following names were found in trip records but are not linked to an official worker profile.
-          Select a profile for each name and click &apos;Link&apos; to create an alias and update all associated trips.
-        </p>
+        <div className="flex flex-col sm:flex-row justify-between sm:items-center mb-6 gap-4">
+            <div>
+                <h2 className="text-xl font-semibold text-gray-700">Trip Record Names</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Manage which worker profile is linked to each name found in trip records.
+                </p>
+            </div>
+            <div className="relative">
+                <MagnifyingGlassIcon className="h-5 w-5 text-gray-400 absolute top-1/2 left-3 -translate-y-1/2" />
+                <input
+                    type="text"
+                    placeholder="Search names..."
+                    value={nameSearchTerm}
+                    onChange={(e) => setNameSearchTerm(e.target.value)}
+                    className="w-full sm:w-64 pl-10 p-2 border rounded-md text-black"
+                />
+            </div>
+        </div>
         
         {loading ? (
-          <p>Loading unlinked names...</p>
-        ) : unlinkedNames.length > 0 ? (
+          <p>Loading worker names...</p>
+        ) : filteredNames.length > 0 ? (
           <div className="space-y-4">
-            {unlinkedNames.map(name => (
+            {filteredNames.map(name => (
               <div key={name} className="flex flex-col sm:flex-row items-center justify-between p-4 border rounded-lg bg-gray-50">
-                <span className="font-bold text-gray-800 mb-2 sm:mb-0">{name}</span>
+                <div className="flex items-center mb-2 sm:mb-0">
+                    {/* THIS IS THE CORRECTED LOGIC FOR THE CHECKMARK */}
+                    {linkedAliases.has(name) ? (
+                        <CheckCircleIcon className="h-6 w-6 text-green-500 mr-3 flex-shrink-0" title="Linked in database" />
+                    ) : (
+                        <XCircleIcon className="h-6 w-6 text-red-500 mr-3 flex-shrink-0" title="Not linked in database" />
+                    )}
+                    <span className="font-bold text-gray-800">{name}</span>
+                </div>
                 <div className="flex items-center space-x-2 w-full sm:w-auto">
                   <SearchableDropdown
                     workers={workers}
@@ -296,7 +334,7 @@ const LinkWorkersPage = () => {
                     className="flex items-center bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <LinkIcon className="h-4 w-4 mr-1" />
-                    Link
+                    {linkedAliases.has(name) ? 'Update' : 'Link'}
                   </button>
                 </div>
               </div>
@@ -304,7 +342,7 @@ const LinkWorkersPage = () => {
           </div>
         ) : (
           <p className="text-gray-500 text-center py-8">
-            Congratulations! All worker names in trip records are linked to a profile.
+            {allNames.length > 0 && nameSearchTerm ? 'No matching names found.' : 'No names found in trip records.'}
           </p>
         )}
       </div>

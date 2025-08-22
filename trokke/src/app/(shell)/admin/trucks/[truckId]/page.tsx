@@ -11,6 +11,9 @@ import { Database } from '@/types/supabase';
 import { PostgrestError } from '@supabase/supabase-js';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 // --- Type Definitions ---
 type TruckWithWorkerProfile = Database['public']['Tables']['trucks']['Row'] & {
@@ -21,6 +24,13 @@ type TruckWithWorkerProfile = Database['public']['Tables']['trucks']['Row'] & {
 type Trip = Database['public']['Tables']['truck_trips']['Row'];
 type PreTripCheck = Database['public']['Tables']['pre_trip_checks']['Row'];
 type TruckUpdatePayload = Database['public']['Tables']['trucks']['Update'];
+type AvailableWorker = { id: number; full_name: string | null };
+// Type for Supabase worker query result
+type WorkerWithProfileData = {
+  id: number;
+  profiles: { full_name: string | null } | { full_name: string | null }[] | null;
+};
+
 
 // --- Helper function to parse check results ---
 const parseReportedIssues = (check: PreTripCheck | null) => {
@@ -139,39 +149,6 @@ const InfoItem = ({ label, value }: { label: string; value: string | number | nu
     <div><p className="text-gray-500">{label}</p><p className={`font-semibold whitespace-pre-wrap ${!value ? 'text-red-500' : 'text-gray-800'}`}>{!value ? '!! Not Set' : value}</p></div>
 );
 
-function TruckMetrics({ lastTrip, isHoursBased }: { lastTrip: Trip | null, isHoursBased: boolean }) {
-  const [dieselPrice, setDieselPrice] = useState(() => (typeof window !== 'undefined' ? localStorage.getItem('globalDieselPrice') || '' : ''));
-  const [costPerUnit, setCostPerUnit] = useState('N/A');
-
-  const efficiency = useMemo(() => {
-    if (lastTrip && lastTrip.total_km && lastTrip.liters_filled && lastTrip.liters_filled > 0) {
-      const totalDistance = typeof lastTrip.total_km === 'string' ? parseFloat(lastTrip.total_km) : lastTrip.total_km;
-      const litersFilled = typeof lastTrip.liters_filled === 'string' ? parseFloat(lastTrip.liters_filled) : lastTrip.liters_filled;
-      return totalDistance / litersFilled;
-    }
-    return 0;
-  }, [lastTrip]);
-
-  useEffect(() => {
-    const price = parseFloat(dieselPrice);
-    if (price > 0 && efficiency > 0) setCostPerUnit((price / efficiency).toFixed(2));
-    else setCostPerUnit('N/A');
-    if (typeof window !== 'undefined') localStorage.setItem('globalDieselPrice', dieselPrice);
-  }, [dieselPrice, efficiency]);
-
-  const efficiencyUnit = isHoursBased ? 'L/hr' : 'km/L';
-  const costUnit = isHoursBased ? 'per Hour' : 'per KM';
-  const efficiencyValue = isHoursBased && efficiency > 0 ? (1 / efficiency).toFixed(2) : efficiency.toFixed(2);
-
-  return (
-    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card className="bg-white"><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-600">Fuel Efficiency</CardTitle><Fuel className="h-4 w-4 text-gray-400" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{efficiency > 0 ? efficiencyValue : 'N/A'} {efficiencyUnit}</div><p className="text-xs text-gray-500">Based on the last trip</p></CardContent></Card>
-        <Card className="bg-white"><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-600">Cost {costUnit}</CardTitle><span className="h-4 w-4 text-gray-400 font-bold">R</span></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{costPerUnit !== 'N/A' ? `R ${costPerUnit}` : 'N/A'}</div><p className="text-xs text-gray-500">Based on diesel price</p></CardContent></Card>
-        <Card className="bg-white col-span-1 md:col-span-2"><CardHeader><CardTitle className="text-sm font-medium text-gray-600">Calculate Running Cost</CardTitle></CardHeader><CardContent><Label htmlFor="diesel-price">Current Diesel Price (R/L)</Label><div className="relative mt-2"><span className="absolute inset-y-0 left-0 flex items-center pl-3 text-gray-500">R</span><Input id="diesel-price" type="number" value={dieselPrice} onChange={(e) => setDieselPrice(e.target.value)} placeholder="e.g., 23.50" className="pl-7 bg-white text-black border-gray-300" /></div></CardContent></Card>
-    </div>
-  );
-}
-
 function ServiceSummaryCard({ truck }: { truck: TruckWithWorkerProfile }) {
     const serviceUnit = truck.is_hours_based ? 'hours' : 'km';
     
@@ -193,7 +170,6 @@ function ServiceSummaryCard({ truck }: { truck: TruckWithWorkerProfile }) {
                 <div className="flex items-center justify-between">
                     <div>{renderServiceStatus()}</div>
                     <Link href={`/admin/trucks/${truck.id}/services`} passHref>
-                        {/* UPDATED: Button styling */}
                         <Button className="bg-green-700 text-white hover:bg-green-800 transition-transform transform hover:scale-105">View Full History</Button>
                     </Link>
                 </div>
@@ -202,11 +178,137 @@ function ServiceSummaryCard({ truck }: { truck: TruckWithWorkerProfile }) {
     );
 }
 
+// --- Driver Assignment Card ---
+function DriverAssignmentCard({ truck, onTruckUpdate }: { truck: TruckWithWorkerProfile, onTruckUpdate: () => void }) {
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [availableWorkers, setAvailableWorkers] = useState<AvailableWorker[]>([]);
+    const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
+    const [loadingWorkers, setLoadingWorkers] = useState(false);
+
+    const fetchAvailableWorkers = async () => {
+        setLoadingWorkers(true);
+        const supabase = createClient();
+
+        const { data: assignedTrucks, error: assignedError } = await supabase
+            .from('trucks')
+            .select('assigned_worker_id')
+            .not('assigned_worker_id', 'is', null);
+
+        if (assignedError) {
+            console.error("Error fetching assigned workers:", assignedError);
+            setLoadingWorkers(false);
+            return;
+        }
+        const assignedWorkerIds = assignedTrucks.map(t => t.assigned_worker_id).filter(Boolean);
+
+        const query = supabase.from('workers').select('id, profiles(full_name)');
+        
+        if (assignedWorkerIds.length > 0) {
+            query.not('id', 'in', `(${assignedWorkerIds.join(',')})`);
+        }
+
+        const { data: workersData, error: workersError } = await query;
+        
+        if (workersError) {
+            console.error("Error fetching available workers:", workersError);
+        } else if (workersData) {
+            const formattedWorkers = workersData.map((w: WorkerWithProfileData) => ({
+                id: w.id,
+                full_name: (Array.isArray(w.profiles) ? w.profiles[0]?.full_name : w.profiles?.full_name) || `Worker ID: ${w.id}`
+            }));
+            setAvailableWorkers(formattedWorkers);
+        }
+        setLoadingWorkers(false);
+    };
+
+    const handleOpenModal = () => {
+        fetchAvailableWorkers();
+        setSelectedWorkerId(truck.assigned_worker_id?.toString() || '');
+        setIsModalOpen(true);
+    };
+
+    const handleSaveAssignment = async () => {
+        const supabase = createClient();
+        const workerIdToAssign = selectedWorkerId === 'unassign' ? null : parseInt(selectedWorkerId, 10);
+
+        const { error } = await supabase
+            .from('trucks')
+            .update({ assigned_worker_id: workerIdToAssign })
+            .eq('id', truck.id);
+
+        if (error) {
+            alert(`Failed to update driver: ${error.message}`);
+        } else {
+            onTruckUpdate();
+            setIsModalOpen(false);
+        }
+    };
+
+    const driverProfile = truck.workers?.profiles;
+
+    return (
+        <Card className="lg:col-span-1 bg-white">
+            <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2 text-gray-800"><User /> Current Driver</CardTitle>
+                <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+                    <DialogTrigger asChild>
+                        <Button size="sm" onClick={handleOpenModal} className="bg-green-700 text-white hover:bg-green-800">
+                            {driverProfile ? 'Change' : 'Assign'}
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent className="bg-green-100 text-green-900">
+                        <DialogHeader>
+                            <DialogTitle>Assign Driver to {truck.license_plate}</DialogTitle>
+                            <DialogDescription className="text-green-800">Select an available worker from the list below or unassign the current driver.</DialogDescription>
+                        </DialogHeader>
+                        {loadingWorkers ? <p>Loading available drivers...</p> : (
+                            <Select onValueChange={setSelectedWorkerId} defaultValue={selectedWorkerId}>
+                                <SelectTrigger className="bg-white text-black">
+                                    <SelectValue placeholder="Select a driver..." />
+                                </SelectTrigger>
+                                <SelectContent className="bg-white text-black max-h-60">
+                                    <SelectItem value="unassign">-- Unassign Driver --</SelectItem>
+                                    {availableWorkers.map(worker => (
+                                        <SelectItem key={worker.id} value={worker.id.toString()}>
+                                            {worker.full_name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        )}
+                        <DialogFooter className="mt-4">
+                            <Button variant="ghost" onClick={() => setIsModalOpen(false)} className="text-green-900 hover:bg-green-200">Cancel</Button>
+                            <Button onClick={handleSaveAssignment} disabled={!selectedWorkerId} className="bg-green-700 text-white hover:bg-green-800">Save Assignment</Button>
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            </CardHeader>
+            <CardContent>
+                {driverProfile ? (
+                    <div className="flex items-center space-x-4">
+                        <div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center">
+                            <User className="h-6 w-6 text-gray-500" />
+                        </div>
+                        <div>
+                            <p className="text-lg font-semibold text-gray-900">{driverProfile.full_name}</p>
+                            <p className="text-sm text-gray-500">ID: {driverProfile.id.substring(0, 8)}...</p>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-gray-500">No driver currently assigned.</p>
+                )}
+            </CardContent>
+        </Card>
+    );
+}
+
+
 export default function TruckDetailsPageWrapper() {
     const params = useParams();
     const truckIdParam = Array.isArray(params.truckId) ? params.truckId[0] : params.truckId;
     const [truck, setTruck] = useState<TruckWithWorkerProfile | null>(null);
     const [lastTrip, setLastTrip] = useState<Trip | null>(null);
+    const [previousTrip, setPreviousTrip] = useState<Trip | null>(null);
     const [lastCheck, setLastCheck] = useState<PreTripCheck | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -234,9 +336,23 @@ export default function TruckDetailsPageWrapper() {
             if (truckError || !truckData) { console.error(`Error fetching truck with ID ${truckIdParam}:`, truckError); setError('Failed to load truck data.'); setLoading(false); return; }
             setTruck(truckData);
 
-            const { data: lastTripData, error: tripError } = await supabase.from('truck_trips').select('*').eq('truck_id', truckId).order('trip_date', { ascending: false }).limit(1).single() as { data: Trip | null, error: PostgrestError | null };
-            if (tripError && tripError.code !== 'PGRST116') console.warn(`Could not fetch last trip for truck ${truckIdParam}:`, tripError.message);
-            setLastTrip(lastTripData);
+            const { data: tripsData, error: tripError } = await supabase.from('truck_trips').select('*').eq('truck_id', truckId).order('trip_date', { ascending: false }).limit(2) as { data: Trip[] | null, error: PostgrestError | null };
+            if (tripError && tripError.code !== 'PGRST116') {
+                console.warn(`Could not fetch trips for truck ${truckIdParam}:`, tripError.message);
+            }
+            
+            if (tripsData && tripsData.length > 0) {
+                setLastTrip(tripsData[0]);
+                if (tripsData.length > 1) {
+                    setPreviousTrip(tripsData[1]);
+                } else {
+                    setPreviousTrip(null);
+                }
+            } else {
+                setLastTrip(null);
+                setPreviousTrip(null);
+            }
+
 
             const { data: lastCheckData, error: checkError } = await supabase.from('pre_trip_checks').select('*').eq('truck_id', truckId).order('checked_at', { ascending: false }).limit(1).single() as { data: PreTripCheck | null, error: PostgrestError | null };
             if (checkError && checkError.code !== 'PGRST116') console.warn(`Could not fetch last check for truck ${truckIdParam}:`, checkError.message);
@@ -254,7 +370,6 @@ export default function TruckDetailsPageWrapper() {
     if (error) notFound();
     if (!truck) return <div className="p-8 text-center">Waiting for truck information...</div>;
 
-    const driverProfile = truck.workers?.profiles;
     const vehicleDetailsCard = (<div className="grid gap-6"><TruckDetailsCard truck={truck} onTruckUpdate={handleTruckUpdate} /></div>);
 
     return (
@@ -267,10 +382,22 @@ export default function TruckDetailsPageWrapper() {
             </div>
             {hasMissingFields && vehicleDetailsCard}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                <Card className="lg:col-span-1 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><User /> Current Driver</CardTitle></CardHeader><CardContent>{driverProfile ? (<div className="flex items-center space-x-4"><div className="w-12 h-12 rounded-full bg-gray-100 flex items-center justify-center"><User className="h-6 w-6 text-gray-500" /></div><div><p className="text-lg font-semibold text-gray-900">{driverProfile.full_name}</p><p className="text-sm text-gray-500">ID: {driverProfile.id.substring(0, 8)}...</p></div></div>) : (<p className="text-gray-500">No driver currently assigned.</p>)}</CardContent></Card>
-                <Card className="lg:col-span-2 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><GanttChartSquare /> Last Trip Details</CardTitle></CardHeader><CardContent>{lastTrip ? (<div className="grid grid-cols-2 gap-4 text-sm text-gray-700"><div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-gray-400" /> <strong>Date:</strong> {lastTrip.trip_date ? new Date(lastTrip.trip_date).toLocaleDateString() : 'N/A'}</div><div className="flex items-center gap-2"><Route className="h-4 w-4 text-gray-400" /> <strong>Distance:</strong> {lastTrip.total_km ? `${Number(lastTrip.total_km).toFixed(2)} ${truck.is_hours_based ? 'hrs' : 'km'}` : 'N/A'}</div><div className="flex items-center gap-2 col-span-2"><MapPin className="h-4 w-4 text-gray-400" /> <strong>Notes:</strong> {lastTrip.notes || 'No notes for this trip.'}</div><div className="flex items-center gap-2"><Fuel className="h-4 w-4 text-gray-400" /> <strong>Fuel Filled:</strong> {lastTrip.liters_filled ? `${Number(lastTrip.liters_filled).toFixed(2)} L` : 'N/A'}</div></div>) : (<p className="text-gray-500">No trip data available for this truck.</p>)}</CardContent></Card>
+                <DriverAssignmentCard truck={truck} onTruckUpdate={handleTruckUpdate} />
+                <Card className="lg:col-span-2 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><GanttChartSquare /> Last Trip Details</CardTitle></CardHeader>
+                    <CardContent>
+                        {lastTrip ? (
+                            <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
+                                <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-gray-400" /> <strong>Date:</strong> {lastTrip.trip_date ? new Date(lastTrip.trip_date).toLocaleDateString() : 'N/A'}</div>
+                                <div className="flex items-center gap-2"><Route className="h-4 w-4 text-gray-400" /> <strong>Distance:</strong> {previousTrip?.total_km ? `${Number(previousTrip.total_km).toFixed(2)} ${truck.is_hours_based ? 'hrs' : 'km'}` : 'N/A'}</div>
+                                <div className="flex items-center gap-2 col-span-2"><MapPin className="h-4 w-4 text-gray-400" /> <strong>Notes:</strong> {lastTrip.notes || 'No notes for this trip.'}</div>
+                                <div className="flex items-center gap-2"><Fuel className="h-4 w-4 text-gray-400" /> <strong>Fuel Filled:</strong> {lastTrip.liters_filled ? `${Number(lastTrip.liters_filled).toFixed(2)} L` : 'N/A'}</div>
+                            </div>
+                        ) : (
+                            <p className="text-gray-500">No trip data available for this truck.</p>
+                        )}
+                    </CardContent>
+                </Card>
             </div>
-            <TruckMetrics lastTrip={lastTrip} isHoursBased={truck.is_hours_based} />
             <div className="grid gap-6">
                 <Card className="lg:col-span-3 bg-white">
                     <CardHeader className="flex flex-row items-center justify-between">
@@ -279,10 +406,9 @@ export default function TruckDetailsPageWrapper() {
                             <CardDescription className="text-gray-500">Issues from the latest pre-trip check on {lastCheck ? new Date(lastCheck.checked_at).toLocaleString() : 'N/A'}.</CardDescription>
                         </div>
                         {reportedIssues.length > 0 && !lastCheck?.issues_resolved && (
-                             // UPDATED: Button styling
                              <Button size="sm" onClick={handleResolveIssues} className="bg-green-700 text-white hover:bg-green-800 transition-transform transform hover:scale-105">
-                                <CheckCircle2 className="h-4 w-4 mr-2"/>Mark as Resolved
-                            </Button>
+                                 <CheckCircle2 className="h-4 w-4 mr-2"/>Mark as Resolved
+                             </Button>
                         )}
                     </CardHeader>
                     <CardContent>

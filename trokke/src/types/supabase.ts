@@ -208,6 +208,84 @@ export type Database = {
         }
         Relationships: []
       }
+      refueler_logs: {
+        Row: {
+          id: number
+          liters_filled: number
+          notes: string | null
+          odo_reading: number
+          refuel_date: string
+          refueler_id: number
+          truck_id: number
+        }
+        Insert: {
+          id?: never
+          liters_filled: number
+          notes?: string | null
+          odo_reading: number
+          refuel_date?: string
+          refueler_id: number
+          truck_id: number
+        }
+        Update: {
+          id?: never
+          liters_filled?: number
+          notes?: string | null
+          odo_reading?: number
+          refuel_date?: string
+          refueler_id?: number
+          truck_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refueler_logs_refueler_id_fkey"
+            columns: ["refueler_id"]
+            isOneToOne: false
+            referencedRelation: "refuelers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refueler_logs_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
+          {
+            foreignKeyName: "refueler_logs_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      refuelers: {
+        Row: {
+          created_at: string
+          id: number
+          profile_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: never
+          profile_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: never
+          profile_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "refuelers_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       services: {
         Row: {
           air_filter: boolean | null
@@ -309,7 +387,6 @@ export type Database = {
       }
       truck_trips: {
         Row: {
-          closing_km: number | null
           comments: string | null
           created_at: string
           expense_amount: number | null
@@ -329,7 +406,6 @@ export type Database = {
           worker_name: string | null
         }
         Insert: {
-          closing_km?: number | null
           comments?: string | null
           created_at?: string
           expense_amount?: number | null
@@ -349,7 +425,6 @@ export type Database = {
           worker_name?: string | null
         }
         Update: {
-          closing_km?: number | null
           comments?: string | null
           created_at?: string
           expense_amount?: number | null
@@ -560,14 +635,46 @@ export type Database = {
           truck_id: number
         }[]
       }
+      get_all_worker_analytics: {
+        Args: { end_date?: string; start_date?: string }
+        Returns: {
+          total_km: number
+          total_liters: number
+          total_preday_checks: number
+          total_trips: number
+          worker_id: number
+          worker_name: string
+        }[]
+      }
       get_client_truck_and_store_locations: {
         Args: { client_profile_id: string }
         Returns: Json
+      }
+      get_fleet_analytics: {
+        Args:
+          | Record<PropertyKey, never>
+          | { end_date: string; start_date: string }
+        Returns: {
+          assigned_worker_name: string
+          avg_kml: number
+          cost_per_km: number
+          current_odo: number
+          license_plate: string
+          make: string
+          model: string
+          next_service_km: number
+          total_fuel_cost: number
+          total_km: number
+          total_liters: number
+          total_service_cost: number
+          truck_id: number
+        }[]
       }
       get_truck_details_with_analytics: {
         Args: Record<PropertyKey, never>
         Returns: {
           category: string
+          has_pre_trip_issues: boolean
           id: number
           is_hours_based: boolean
           latest_km_per_liter: number
@@ -595,7 +702,7 @@ export type Database = {
     }
     Enums: {
       truck_status: "active" | "inactive" | "under_service" | "decommissioned"
-      user_role: "admin" | "worker" | "client"
+      user_role: "admin" | "worker" | "client" | "refueler"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -724,7 +831,7 @@ export const Constants = {
   public: {
     Enums: {
       truck_status: ["active", "inactive", "under_service", "decommissioned"],
-      user_role: ["admin", "worker", "client"],
+      user_role: ["admin", "worker", "client", "refueler"],
     },
   },
 } as const

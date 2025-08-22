@@ -1,4 +1,3 @@
-// src/components/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
@@ -16,8 +15,11 @@ import {
   MapPinIcon,
   LinkIcon as LinkIconSolid,
   WrenchScrewdriverIcon,
-  TableCellsIcon, // Import the new icon
-  ArchiveBoxIcon // Icon for the future section
+  TableCellsIcon,
+  ArchiveBoxIcon,
+  ChartBarIcon,
+  PencilSquareIcon,
+  BeakerIcon // Using as Fuel Icon
 } from '@heroicons/react/24/solid';
 
 interface NavLink {
@@ -27,15 +29,16 @@ interface NavLink {
 }
 
 interface SidebarProps {
-  userRole: "admin" | "client" | "worker" | string;
+  userRole: "admin" | "client" | "worker" | "refueler" | string;
   isSidebarOpen: boolean;
   setSidebarOpen: (isOpen: boolean) => void;
 }
 
-// --- UPDATED: New link structure for admin ---
+// --- Link Definitions ---
 const adminCoreLinks: NavLink[] = [
   { href: "/admin/trucks", label: "Fleet Overview", icon: ChartPieIcon },
   { href: "/admin/fleet-analytics", label: "Fleet Analytics", icon: TableCellsIcon },
+  { href: "/admin/worker-analytics", label: "Worker Analytics", icon: ChartBarIcon },
   { href: "/admin/workers", label: "Workers", icon: UsersIcon },
   { href: "/admin/trips", label: "Trips", icon: MapPinIcon },
   { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
@@ -46,7 +49,6 @@ const adminFutureLinks: NavLink[] = [
     { href: "/admin/my-shops", label: "My Shops", icon: BuildingStorefrontIcon },
 ];
 
-// --- Other roles remain the same ---
 const clientLinks: NavLink[] = [
   { href: "/client/dashboard", label: "Dashboard", icon: ChartPieIcon },
   { href: "/client/my-shops", label: "My Shops", icon: BuildingStorefrontIcon },
@@ -56,6 +58,12 @@ const workerLinks: NavLink[] = [
   { href: "/worker/dashboard", label: "Dashboard", icon: ChartPieIcon },
   { href: "/worker/my-truck", label: "My Truck", icon: TruckIcon },
   { href: "/worker/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
+  { href: "/worker/log-trip", label: "Log Trip", icon: PencilSquareIcon },
+];
+
+const refuelerLinks: NavLink[] = [
+  { href: "/refueler/dashboard", label: "Dashboard", icon: ChartPieIcon },
+  { href: "/refueler/refuels", label: "Log Refuel", icon: BeakerIcon },
 ];
 
 export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: SidebarProps) {
@@ -63,7 +71,6 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
   const { user, signOut } = useAuth();
   const userInitial = user?.email?.charAt(0).toUpperCase() || '?';
 
-  // Determine which links to show based on role
   let coreLinks: NavLink[] = [];
   let futureLinks: NavLink[] = [];
 
@@ -74,21 +81,21 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
     coreLinks = clientLinks;
   } else if (userRole === "worker") {
     coreLinks = workerLinks;
+  } else if (userRole === "refueler") {
+    coreLinks = refuelerLinks;
   }
 
   const sidebarContent = (
     <>
         <div className="flex-1 flex flex-col pt-5 pb-4 overflow-y-auto">
-            {/* Logo and Title */}
             <div className="flex items-center flex-shrink-0 px-4">
-                 <Image src="/favicon.ico" alt="JLL Fresh Produce" width={40} height={40} />
+                 <Image src="/logo/logo.png" alt="JLL Fresh Produce" width={40} height={40} />
                  <span className="ml-3 text-xl font-semibold text-white">JLL Fresh Produce</span>
                  <button onClick={() => setSidebarOpen(false)} className="md:hidden ml-auto p-1">
-                    <XMarkIcon className="h-6 w-6 text-white" />
-                </button>
+                   <XMarkIcon className="h-6 w-6 text-white" />
+                 </button>
             </div>
             
-            {/* Core Navigation */}
             <nav className="mt-8 flex-1 px-2 space-y-2">
                 {coreLinks.map((link) => (
                     <Link
@@ -105,7 +112,6 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
                 ))}
             </nav>
 
-            {/* Future Features Section */}
             {futureLinks.length > 0 && (
                 <div className="px-2 mt-6">
                     <h3 className="px-2 text-xs font-semibold text-green-200 uppercase tracking-wider flex items-center">
@@ -115,33 +121,32 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
                     <div className="mt-2 space-y-2">
                         {futureLinks.map((link) => (
                              <Link
-                                key={link.href}
-                                href={link.href}
-                                onClick={() => setSidebarOpen(false)}
-                                className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                pathname.startsWith(link.href) ? "bg-green-800 text-white" : "text-green-100 hover:bg-green-600 hover:text-white"
-                                }`}
-                            >
-                                <link.icon className="mr-3 flex-shrink-0 h-6 w-6" />
-                                {link.label}
-                            </Link>
+                                 key={link.href}
+                                 href={link.href}
+                                 onClick={() => setSidebarOpen(false)}
+                                 className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+                                 pathname.startsWith(link.href) ? "bg-green-800 text-white" : "text-green-100 hover:bg-green-600 hover:text-white"
+                                 }`}
+                             >
+                                 <link.icon className="mr-3 flex-shrink-0 h-6 w-6" />
+                                 {link.label}
+                             </Link>
                         ))}
                     </div>
                 </div>
             )}
         </div>
 
-        {/* User Info & Sign Out Button */}
         <div className="flex-shrink-0 flex flex-col border-t border-green-800 p-2">
             <div className="px-2 py-3">
                  <div className="flex items-center">
-                    <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-800 text-white text-md font-bold ring-2 ring-green-500">
-                        {userInitial}
-                    </div>
-                    <div className="ml-3">
-                        <p className="text-sm font-semibold text-white truncate">{user?.email}</p>
-                    </div>
-                </div>
+                     <div className="flex h-9 w-9 items-center justify-center rounded-full bg-green-800 text-white text-md font-bold ring-2 ring-green-500">
+                         {userInitial}
+                     </div>
+                     <div className="ml-3">
+                         <p className="text-sm font-semibold text-white truncate">{user?.email}</p>
+                     </div>
+                 </div>
             </div>
             <button
                 onClick={() => signOut()}

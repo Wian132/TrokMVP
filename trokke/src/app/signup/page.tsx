@@ -43,6 +43,7 @@ export default function SignupPage() {
              >
                 <option value="client">Client</option>
                 <option value="worker">Worker</option>
+                <option value="refueler">Refueler</option> {/* Add new role option */}
              </select>
           </div>
           <button type="submit" className="p-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-lg font-semibold">

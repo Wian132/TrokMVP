@@ -27,24 +27,26 @@ export async function middleware(request: NextRequest) {
 
   // If a non-admin tries to access an admin route
   if (pathname.startsWith('/admin') && userRole !== 'admin') {
-    console.log(`Redirecting non-admin from ${pathname}`);
-    // Redirect them to their likely dashboard or a login page
     const redirectUrl = userRole === 'client' ? '/client/dashboard' : userRole === 'worker' ? '/worker/dashboard' : '/login';
     return NextResponse.redirect(new URL(redirectUrl, request.url));
   }
 
   // If a non-client tries to access a client route
   if (pathname.startsWith('/client') && userRole !== 'client') {
-    console.log(`Redirecting non-client from ${pathname}`);
-    const redirectUrl = userRole === 'admin' ? '/admin/dashboard' : userRole === 'worker' ? '/worker/dashboard' : '/login';
+    const redirectUrl = userRole === 'admin' ? '/admin/trucks' : userRole === 'worker' ? '/worker/dashboard' : '/login';
     return NextResponse.redirect(new URL(redirectUrl, request.url));
   }
 
   // If a non-worker tries to access a worker route
   if (pathname.startsWith('/worker') && userRole !== 'worker') {
-    console.log(`Redirecting non-worker from ${pathname}`);
-    const redirectUrl = userRole === 'admin' ? '/admin/dashboard' : userRole === 'client' ? '/client/dashboard' : '/login';
+    const redirectUrl = userRole === 'admin' ? '/admin/trucks' : userRole === 'client' ? '/client/dashboard' : '/login';
     return NextResponse.redirect(new URL(redirectUrl, request.url));
+  }
+
+  // If a non-refueler tries to access a refueler route
+  if (pathname.startsWith('/refueler') && userRole !== 'refueler') {
+      const redirectUrl = userRole === 'admin' ? '/admin/trucks' : userRole === 'client' ? '/client/dashboard' : '/login';
+      return NextResponse.redirect(new URL(redirectUrl, request.url));
   }
 
   return response;

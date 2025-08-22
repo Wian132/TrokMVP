@@ -35,9 +35,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
-// Corrected import: Removed ArrowUpTrayIcon from here
 import { Trash2, PlusCircle, ChevronsUpDown, Info, AlertTriangle } from 'lucide-react'
-// Corrected import: Added ArrowUpTrayIcon here
 import { ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 import { cn } from '@/lib/utils'
@@ -83,6 +81,8 @@ export default function TrucksPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0)
+  // State to manage which truck is being considered for deletion
+  const [truckToDelete, setTruckToDelete] = useState<TruckDetails | null>(null);
   const [filters, setFilters] = useState<FilterState>({
       category: 'all',
       minKml: '',
@@ -148,6 +148,7 @@ export default function TrucksPage() {
     setNotification({ title: 'Success', message: 'Trip data has been imported.' });
   }, [triggerRefresh]);
 
+  // This function is now called from the confirmation dialog
   const handleDeleteTruck = useCallback(async (truckId: string) => {
     const { error } = await supabase.from('trucks').delete().match({ id: truckId })
     if (error) {
@@ -157,7 +158,14 @@ export default function TrucksPage() {
         triggerRefresh();
         setNotification({ title: 'Success', message: 'Vehicle has been deleted.' });
     }
+    // Close the dialog after the operation
+    setTruckToDelete(null);
   }, [supabase, triggerRefresh]);
+
+  // This function opens the confirmation dialog
+  const promptForDelete = useCallback((truck: TruckDetails) => {
+    setTruckToDelete(truck);
+  }, []);
 
   const handleUpdateTruckCategory = useCallback(async (truckId: string, category: TruckCategory) => {
       const { data, error } = await supabase.from('trucks').update({ category }).match({ id: truckId }).select()
@@ -243,13 +251,14 @@ export default function TrucksPage() {
         <FilterBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} filters={filters} setFilters={setFilters} />
 
         <div className="space-y-6">
-            <TruckCategorySection title="Needs Attention" trucks={categorizedTrucks['needs attention']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
-            <TruckCategorySection title="30 Palette Trucks" trucks={categorizedTrucks['30 palette']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
-            <TruckCategorySection title="16 Palette Trucks" trucks={categorizedTrucks['16 palette']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
-            <TruckCategorySection title="Equipment" trucks={categorizedTrucks['equipment']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
-            <TruckCategorySection title="Other" trucks={categorizedTrucks['other']} onDelete={handleDeleteTruck} onUpdateCategory={handleUpdateTruckCategory} />
+            <TruckCategorySection title="Needs Attention" trucks={categorizedTrucks['needs attention']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
+            <TruckCategorySection title="30 Palette Trucks" trucks={categorizedTrucks['30 palette']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
+            <TruckCategorySection title="16 Palette Trucks" trucks={categorizedTrucks['16 palette']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
+            <TruckCategorySection title="Equipment" trucks={categorizedTrucks['equipment']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
+            <TruckCategorySection title="Other" trucks={categorizedTrucks['other']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
         </div>
 
+        {/* --- Notification Dialog --- */}
         <Dialog open={!!notification} onOpenChange={() => setNotification(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -258,6 +267,25 @@ export default function TrucksPage() {
                 </DialogHeader>
                 <DialogFooter>
                     <Button onClick={() => setNotification(null)}>Close</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+
+        {/* --- Deletion Confirmation Dialog --- */}
+        <Dialog open={!!truckToDelete} onOpenChange={() => setTruckToDelete(null)}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Are you absolutely sure?</DialogTitle>
+                    <DialogDescription>
+                        This action cannot be undone. This will permanently delete the vehicle with license plate{' '}
+                        <span className="font-semibold">{truckToDelete?.license_plate}</span>.
+                    </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                    <Button variant="ghost" onClick={() => setTruckToDelete(null)}>Cancel</Button>
+                    <Button variant="destructive" onClick={() => truckToDelete && handleDeleteTruck(truckToDelete.id)}>
+                        Delete Vehicle
+                    </Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>
@@ -459,7 +487,7 @@ function FilterBar({ searchTerm, setSearchTerm, filters, setFilters }: FilterBar
 }
 
 // --- Truck Category Section ---
-function TruckCategorySection({ title, trucks, onDelete, onUpdateCategory }: { title: string, trucks: TruckDetails[], onDelete: (id: string) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
+function TruckCategorySection({ title, trucks, onDelete, onUpdateCategory }: { title: string, trucks: TruckDetails[], onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
     if (trucks.length === 0) {
         return null;
     }
@@ -495,6 +523,10 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
           make: formData.get('make') as string,
           model: formData.get('model') as string,
           category: (formData.get('category') as TruckCategory) || 'other',
+          current_odo: formData.get('current_odo') ? Number(formData.get('current_odo')) : null,
+          is_hours_based: formData.get('is_hours_based') === 'true',
+          next_service_km: formData.get('next_service_km') ? Number(formData.get('next_service_km')) : null,
+          service_interval_km: formData.get('service_interval_km') ? Number(formData.get('service_interval_km')) : null,
         }
 
         const { data, error } = await supabase.from('trucks').insert([newTruckData]).select()
@@ -508,30 +540,30 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
     }
 
     return (
-        <DialogContent>
-            <DialogHeader>
+        <DialogContent className="bg-green-700">
+            <DialogHeader className="text-white">
                 <DialogTitle>Add a New Vehicle</DialogTitle>
             </DialogHeader>
             <form onSubmit={handleSubmit} className="space-y-4">
                 <div>
-                    <Label htmlFor="license_plate">License Plate</Label>
-                    <Input id="license_plate" name="license_plate" required />
+                    <Label htmlFor="license_plate" className="text-white">License Plate</Label>
+                    <Input id="license_plate" name="license_plate" required className="bg-white text-black" />
                 </div>
                 <div>
-                    <Label htmlFor="make">Make</Label>
-                    <Input id="make" name="make" required />
+                    <Label htmlFor="make" className="text-white">Make</Label>
+                    <Input id="make" name="make" required className="bg-white text-black" />
                 </div>
                 <div>
-                    <Label htmlFor="model">Model</Label>
-                    <Input id="model" name="model" required />
+                    <Label htmlFor="model" className="text-white">Model</Label>
+                    <Input id="model" name="model" required className="bg-white text-black" />
                 </div>
                 <div>
-                  <Label htmlFor="category">Category</Label>
+                  <Label htmlFor="category" className="text-white">Category</Label>
                   <Select name="category" defaultValue="other">
-                    <SelectTrigger>
-                      <SelectValue />
+                    <SelectTrigger className="bg-white text-black">
+                      <SelectValue placeholder="Select a category" />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-white text-black">
                       <SelectItem value="30 palette">30 Palette</SelectItem>
                       <SelectItem value="16 palette">16 Palette</SelectItem>
                       <SelectItem value="equipment">Equipment</SelectItem>
@@ -539,8 +571,65 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="flex justify-end">
-                    <Button type="submit" className="bg-green-600 hover:bg-green-700">Save Vehicle</Button>
+                <div>
+                    <Label htmlFor="current_odo" className="flex items-center text-white">
+                        Odometer Reading (Optional)
+                        <div className="relative group ml-2">
+                            <Info size={16} className="cursor-pointer" />
+                            <div className="absolute bottom-full mb-2 w-48 p-2 text-xs text-white bg-black rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                The current odometer reading of the vehicle in kilometers or hours.
+                            </div>
+                        </div>
+                    </Label>
+                    <Input id="current_odo" name="current_odo" type="number" className="bg-white text-black" />
+                </div>
+                <div>
+                    <Label htmlFor="is_hours_based" className="flex items-center text-white">
+                        Vehicle Type (Optional)
+                        <div className="relative group ml-2">
+                            <Info size={16} className="cursor-pointer" />
+                            <div className="absolute bottom-full mb-2 w-48 p-2 text-xs text-white bg-black rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                Is this vehicle&apos;s usage measured in hours instead of kilometers?
+                            </div>
+                        </div>
+                    </Label>
+                    <Select name="is_hours_based" defaultValue="false">
+                        <SelectTrigger className="bg-white text-black">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-white text-black">
+                            <SelectItem value="false">KM-Based</SelectItem>
+                            <SelectItem value="true">Hours-Based</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </div>
+                <div>
+                    <Label htmlFor="next_service_km" className="flex items-center text-white">
+                        Next Service (Optional)
+                        <div className="relative group ml-2">
+                            <Info size={16} className="cursor-pointer" />
+                            <div className="absolute bottom-full mb-2 w-48 p-2 text-xs text-white bg-black rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                The odometer reading (KM or Hours) at which the next service is due.
+                            </div>
+                        </div>
+                    </Label>
+                    <Input id="next_service_km" name="next_service_km" type="number" className="bg-white text-black" />
+                </div>
+                <div>
+                    <Label htmlFor="service_interval_km" className="flex items-center text-white">
+                        Service Interval (Optional)
+                        <div className="relative group ml-2">
+                            <Info size={16} className="cursor-pointer" />
+                            <div className="absolute bottom-full mb-2 w-48 p-2 text-xs text-white bg-black rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                                The interval (in KM or Hours) between services for this vehicle.
+                            </div>
+                        </div>
+                    </Label>
+                    <Input id="service_interval_km" name="service_interval_km" type="number" className="bg-white text-black" />
+                </div>
+                <div className="flex justify-end space-x-2 pt-4">
+                    <Button type="button" onClick={closeModal} className="bg-white text-black hover:bg-gray-200">Cancel</Button>
+                    <Button type="submit" className="bg-white text-black hover:bg-gray-200">Save Vehicle</Button>
                 </div>
             </form>
         </DialogContent>
@@ -548,7 +637,7 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
 }
 
 // --- Truck Card Component ---
-function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails, onDelete: (id: string) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
+function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails, onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
     const { is_hours_based, latest_km_per_liter, latest_odometer } = truck;
 
     const consumptionUnit = is_hours_based ? 'hr/l' : 'km/l';
@@ -646,9 +735,10 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
                         <SelectItem value="needs attention">Needs Attention</SelectItem>
                     </SelectContent>
                 </Select>
+                {/* This button now opens the confirmation dialog */}
                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-red-500 ml-auto" onClick={(e) => {
                     e.stopPropagation();
-                    onDelete(truck.id)
+                    onDelete(truck)
                 }}>
                     <Trash2 size={18} />
                 </Button>

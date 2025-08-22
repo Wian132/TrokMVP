@@ -31,7 +31,6 @@ export default async function HomePage() {
 
     switch (userRole) {
       case 'admin':
-        // UPDATED: Redirect to the trucks page, which is our new main overview.
         console.log('[HomePage] Redirecting to /admin/trucks');
         redirect('/admin/trucks');
         break;
@@ -42,6 +41,10 @@ export default async function HomePage() {
       case 'client':
         console.log('[HomePage] Redirecting to /client/dashboard');
         redirect('/client/dashboard');
+        break;
+      case 'refueler': // Add the new refueler case
+        console.log('[HomePage] Redirecting to /refueler/dashboard');
+        redirect('/refueler/dashboard');
         break;
       default:
         // This case will be hit if the role is unrecognized.
