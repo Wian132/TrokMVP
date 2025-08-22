@@ -1,7 +1,5 @@
-// src/lib/import-actions.ts
-
-"use server";
-
+// src/app/api/import-actions/route.ts
+import { NextResponse } from 'next/server';
 import { type Database } from "@/types/supabase";
 import { createClient } from "@/utils/supabase/server";
 import * as XLSX from 'xlsx';
@@ -199,14 +197,12 @@ function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: num
     return trips;
 }
 
-// --- Main Import Function ---
-
-export async function handleImport(formData: FormData): Promise<{ success: boolean; message: string }> {
-  'use server';
-
+// --- Main API Handler ---
+export async function POST(request: Request) {
+  const formData = await request.formData();
   const file = formData.get('file') as File;
   if (!file) {
-    return { success: false, message: "No file uploaded." };
+    return NextResponse.json({ success: false, message: "No file uploaded." }, { status: 400 });
   }
 
   try {
@@ -264,10 +260,10 @@ export async function handleImport(formData: FormData): Promise<{ success: boole
         }
     }
 
-    return { success: true, message: `Import complete! Processed ${trucksProcessed} sheets and imported ${totalTripsImported} new trip records.` };
+    return NextResponse.json({ success: true, message: `Import complete! Processed ${trucksProcessed} sheets and imported ${totalTripsImported} new trip records.` });
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
-    return { success: false, message: `Import failed: ${errorMessage}` };
+    return NextResponse.json({ success: false, message: `Import failed: ${errorMessage}` }, { status: 500 });
   }
 }

@@ -1,12 +1,17 @@
-import type { NextConfig } from "next";
-
-const nextConfig: NextConfig = {
+/** @type {import('next').NextConfig} */
+const nextConfig = {
   experimental: {
     serverActions: {
-      bodySizeLimit: '4mb', // Increase the limit to 4mb (or higher if needed)
+      bodySizeLimit: '4mb',
     },
   },
-  /* other config options can go here */
+
+  // The 'ignoreBuildErrors' and 'output' properties have been removed.
+  // This ensures we catch all type errors and build the app for a server environment.
+
+  images: {
+    unoptimized: true,
+  },
 };
 
 export default nextConfig;

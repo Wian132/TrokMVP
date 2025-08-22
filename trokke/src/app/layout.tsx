@@ -6,7 +6,8 @@ import { createClient } from "@/utils/supabase/server";
 import { ReactNode } from "react";
 import Script from "next/script";
 
-export const dynamic = "force-dynamic";
+// This line has been removed:
+// export const dynamic = "force-dynamic";
 
 const inter = Inter({ subsets: ["latin"] });
 

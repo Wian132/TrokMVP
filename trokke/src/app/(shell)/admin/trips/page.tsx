@@ -1,5 +1,7 @@
 // src/app/(shell)/admin/trips/page.tsx
 'use client';
+export const dynamic = 'force-dynamic';
+
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';

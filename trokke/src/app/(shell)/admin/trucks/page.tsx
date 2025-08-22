@@ -39,12 +39,11 @@ import { Trash2, PlusCircle, ChevronsUpDown, Info, AlertTriangle } from 'lucide-
 import { ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 import { cn } from '@/lib/utils'
-import { handleImport } from '@/lib/import-actions'
 
 type TruckCategory = '30 palette' | '16 palette' | 'equipment' | 'other' | 'needs attention' | null;
 
 type TruckDetails = {
-  id: string;
+  id: number; // CORRECTED: Was 'string', now 'number' to match database type.
   license_plate: string;
   make: string | null;
   model: string | null;
@@ -55,14 +54,13 @@ type TruckDetails = {
   total_trips: number;
   is_hours_based: boolean;
   missing_fields: string[] | null;
-  next_service_km: number | null; // This holds both km and hours values
+  next_service_km: number | null;
   has_pre_trip_issues: boolean;
 };
 
 type RpcTruckDetails = Omit<TruckDetails, 'has_pre_trip_issues'> & {
   has_pre_trip_issues?: boolean;
 };
-
 
 type FilterState = {
     category: string;
@@ -81,7 +79,6 @@ export default function TrucksPage() {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0)
-  // State to manage which truck is being considered for deletion
   const [truckToDelete, setTruckToDelete] = useState<TruckDetails | null>(null);
   const [filters, setFilters] = useState<FilterState>({
       category: 'all',
@@ -148,8 +145,7 @@ export default function TrucksPage() {
     setNotification({ title: 'Success', message: 'Trip data has been imported.' });
   }, [triggerRefresh]);
 
-  // This function is now called from the confirmation dialog
-  const handleDeleteTruck = useCallback(async (truckId: string) => {
+  const handleDeleteTruck = useCallback(async (truckId: number) => { // CORRECTED: Parameter is now 'number'
     const { error } = await supabase.from('trucks').delete().match({ id: truckId })
     if (error) {
         console.error('Error deleting truck:', error)
@@ -158,16 +154,14 @@ export default function TrucksPage() {
         triggerRefresh();
         setNotification({ title: 'Success', message: 'Vehicle has been deleted.' });
     }
-    // Close the dialog after the operation
     setTruckToDelete(null);
   }, [supabase, triggerRefresh]);
 
-  // This function opens the confirmation dialog
   const promptForDelete = useCallback((truck: TruckDetails) => {
     setTruckToDelete(truck);
   }, []);
 
-  const handleUpdateTruckCategory = useCallback(async (truckId: string, category: TruckCategory) => {
+  const handleUpdateTruckCategory = useCallback(async (truckId: number, category: TruckCategory) => { // CORRECTED: Parameter is now 'number'
       const { data, error } = await supabase.from('trucks').update({ category }).match({ id: truckId }).select()
       if (error) {
           console.error('Error updating truck category', error)
@@ -258,7 +252,6 @@ export default function TrucksPage() {
             <TruckCategorySection title="Other" trucks={categorizedTrucks['other']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
         </div>
 
-        {/* --- Notification Dialog --- */}
         <Dialog open={!!notification} onOpenChange={() => setNotification(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -271,7 +264,6 @@ export default function TrucksPage() {
             </DialogContent>
         </Dialog>
 
-        {/* --- Deletion Confirmation Dialog --- */}
         <Dialog open={!!truckToDelete} onOpenChange={() => setTruckToDelete(null)}>
             <DialogContent>
                 <DialogHeader>
@@ -309,17 +301,27 @@ function ImportTripsModal({ onTripsImported, closeModal, setNotification }: { on
         const formData = new FormData();
         formData.append('file', fileInputRef.current.files[0]);
 
-        const result = await handleImport(formData);
+        try {
+            const response = await fetch('/api/import-actions', {
+                method: 'POST',
+                body: formData,
+            });
+            const result = await response.json();
+            
+            setIsImporting(false);
+            setNotification({ 
+                title: result.success ? 'Import Successful' : 'Import Failed', 
+                message: result.message 
+            });
 
-        setIsImporting(false);
-        setNotification({ 
-            title: result.success ? 'Import Successful' : 'Import Failed', 
-            message: result.message 
-        });
-
-        if (result.success) {
-            onTripsImported();
-            closeModal();
+            if (result.success) {
+                onTripsImported();
+                closeModal();
+            }
+        } catch (error) {
+            setIsImporting(false);
+            console.error("Import failed:", error);
+            setNotification({ title: 'Error', message: 'An unexpected error occurred during import.' });
         }
     };
 
@@ -487,7 +489,7 @@ function FilterBar({ searchTerm, setSearchTerm, filters, setFilters }: FilterBar
 }
 
 // --- Truck Category Section ---
-function TruckCategorySection({ title, trucks, onDelete, onUpdateCategory }: { title: string, trucks: TruckDetails[], onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
+function TruckCategorySection({ title, trucks, onDelete, onUpdateCategory }: { title: string, trucks: TruckDetails[], onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: number, category: TruckCategory) => void }) {
     if (trucks.length === 0) {
         return null;
     }
@@ -637,7 +639,7 @@ function AddTruckModal({ onTruckAdded, closeModal }: { onTruckAdded: () => void,
 }
 
 // --- Truck Card Component ---
-function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails, onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: string, category: TruckCategory) => void }) {
+function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails, onDelete: (truck: TruckDetails) => void, onUpdateCategory: (id: number, category: TruckCategory) => void }) {
     const { is_hours_based, latest_km_per_liter, latest_odometer } = truck;
 
     const consumptionUnit = is_hours_based ? 'hr/l' : 'km/l';
@@ -735,7 +737,6 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
                         <SelectItem value="needs attention">Needs Attention</SelectItem>
                     </SelectContent>
                 </Select>
-                {/* This button now opens the confirmation dialog */}
                 <Button variant="ghost" size="icon" className="text-gray-400 hover:text-red-500 ml-auto" onClick={(e) => {
                     e.stopPropagation();
                     onDelete(truck)
