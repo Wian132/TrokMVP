@@ -113,28 +113,29 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
     const trips: TripInsert[] = [];
     for (let i = 0; i < validRows.length; i++) {
         const currentRow = validRows[i];
-        let totalKm: number | null = null;
         
-        const isLastRow = i === validRows.length - 1;
+        let totalKm: number | null = 0;
+        let litersFilled: number | null = 0;
 
-        if (isLastRow) {
-            totalKm = 0;
-        } else {
-            const nextRow = validRows[i + 1];
-            if (!isNaN(nextRow.opening_km) && !isNaN(currentRow.opening_km) && nextRow.opening_km > currentRow.opening_km) {
-                totalKm = nextRow.opening_km - currentRow.opening_km;
+        if (i > 0) {
+            const previousRow = validRows[i - 1];
+            
+            // Litres are from the previous row
+            litersFilled = isNaN(previousRow.litres) ? null : previousRow.litres;
+
+            // Calculate distance based on the difference in odometer readings
+            if (!isNaN(currentRow.opening_km) && !isNaN(previousRow.opening_km) && currentRow.opening_km > previousRow.opening_km) {
+                totalKm = currentRow.opening_km - previousRow.opening_km;
+            } else if (!isNaN(previousRow.distance_from_sheet) && previousRow.distance_from_sheet > 0) {
+                // Fallback to the 'km' column from the previous row if odo is unreliable
+                totalKm = previousRow.distance_from_sheet;
+            } else {
+                totalKm = 0; // Default to 0 if no reliable data
             }
         }
-
-        if (totalKm === null && !isNaN(currentRow.distance_from_sheet) && currentRow.distance_from_sheet > 0) {
-            totalKm = currentRow.distance_from_sheet;
-        }
-
-        if (totalKm === null) {
-            totalKm = 0;
-        }
         
-        if (totalKm < 0 || totalKm > 5000) {
+        // Data integrity checks for totalKm
+        if (totalKm === null || totalKm < 0 || totalKm > 5000) {
             totalKm = 0;
         }
         
@@ -143,7 +144,7 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
             trip_date: currentRow.date.toISOString(),
             opening_km: isNaN(currentRow.opening_km) ? null : currentRow.opening_km,
             total_km: totalKm,
-            liters_filled: isNaN(currentRow.litres) ? null : currentRow.litres,
+            liters_filled: litersFilled,
             worker_name: currentRow.driver,
             is_hours_based: false,
         });
@@ -161,38 +162,57 @@ function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: num
     const litresIndex = headers.indexOf('litres');
     const driverIndex = headers.indexOf('driver');
 
-    const processedRows: { date: Date; odometer: number; originalRow: (string | number | null)[] }[] = [];
+    const processedRows: { date: Date; odometer: number; litres: number; driver: string; }[] = [];
     for (let i = dataStartIndex; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
         const date = parseDate(row[dateIndex]);
         const odometer = cleanAndParseFloat(row[odoIndex]);
         if (date && !isNaN(odometer)) {
-            processedRows.push({ date, odometer, originalRow: row });
+            processedRows.push({ 
+                date, 
+                odometer, 
+                litres: cleanAndParseFloat(row[litresIndex]),
+                driver: driverIndex !== -1 ? String(row[driverIndex] || 'N/A').trim() : 'N/A'
+            });
         }
     }
 
-    if (processedRows.length < 2) return [];
-    processedRows.sort((a, b) => a.date.getTime() - b.date.getTime());
+    if (processedRows.length === 0) return [];
+    
+    processedRows.sort((a, b) => {
+        if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime();
+        return a.odometer - b.odometer;
+    });
 
     const trips: TripInsert[] = [];
-    for (let i = 1; i < processedRows.length; i++) {
+    for (let i = 0; i < processedRows.length; i++) {
         const currentRow = processedRows[i];
-        const previousRow = processedRows[i - 1];
-        const distance = currentRow.odometer - previousRow.odometer;
-        if (distance > 0) {
-            const litres = cleanAndParseFloat(currentRow.originalRow[litresIndex]);
-            const driver = driverIndex !== -1 ? String(currentRow.originalRow[driverIndex] || 'N/A').trim() : 'N/A';
-            trips.push({
-                truck_id: truckIdNum,
-                trip_date: currentRow.date.toISOString(),
-                opening_km: previousRow.odometer,
-                total_km: distance,
-                liters_filled: isNaN(litres) ? null : litres,
-                worker_name: driver,
-                is_hours_based: true,
-            });
+        let totalKm: number | null = 0; // Represents hours in this context
+        let litersFilled: number | null = 0;
+
+        if (i > 0) {
+            const previousRow = processedRows[i - 1];
+            
+            // Litres are from the previous row
+            litersFilled = isNaN(previousRow.litres) ? null : previousRow.litres;
+
+            // Distance (hours) is the difference in odometer readings
+            const distance = currentRow.odometer - previousRow.odometer;
+            if (distance > 0) {
+                totalKm = distance;
+            }
         }
+        
+        trips.push({
+            truck_id: truckIdNum,
+            trip_date: currentRow.date.toISOString(),
+            opening_km: currentRow.odometer, // This is 'opening_hrs'
+            total_km: totalKm, // This is 'total_hrs'
+            liters_filled: litersFilled,
+            worker_name: currentRow.driver,
+            is_hours_based: true,
+        });
     }
     return trips;
 }
