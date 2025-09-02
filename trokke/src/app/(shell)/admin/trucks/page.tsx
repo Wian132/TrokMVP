@@ -40,10 +40,16 @@ import { ArrowPathIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
 import React from 'react'
 import { cn } from '@/lib/utils'
 
+// --- TYPE FIX ---
+// Define the expected shape of the data returned from the Supabase query.
+type ProfileWithRole = {
+  roles: { name: string } | { name: string }[] | null;
+};
+
 type TruckCategory = '30 palette' | '16 palette' | 'equipment' | 'other' | 'needs attention' | null;
 
 type TruckDetails = {
-  id: number; // CORRECTED: Was 'string', now 'number' to match database type.
+  id: number;
   license_plate: string;
   make: string | null;
   model: string | null;
@@ -105,11 +111,16 @@ export default function TrucksPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('role')
+        .select('roles(name)')
         .eq('id', user.id)
         .single();
 
-      if (profileError || !profile || profile.role !== 'admin') {
+      // Cast the result to our defined type to help TypeScript
+      const typedProfile = profile as ProfileWithRole | null;
+      const roleRelation = typedProfile?.roles;
+      const userRole = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
+
+      if (profileError || !userRole || (userRole !== 'Admin' && userRole !== 'SuperAdmin')) {
         console.error('Access denied or profile error:', profileError);
         router.push('/');
         return;
@@ -145,7 +156,7 @@ export default function TrucksPage() {
     setNotification({ title: 'Success', message: 'Trip data has been imported.' });
   }, [triggerRefresh]);
 
-  const handleDeleteTruck = useCallback(async (truckId: number) => { // CORRECTED: Parameter is now 'number'
+  const handleDeleteTruck = useCallback(async (truckId: number) => {
     const { error } = await supabase.from('trucks').delete().match({ id: truckId })
     if (error) {
         console.error('Error deleting truck:', error)
@@ -161,7 +172,7 @@ export default function TrucksPage() {
     setTruckToDelete(truck);
   }, []);
 
-  const handleUpdateTruckCategory = useCallback(async (truckId: number, category: TruckCategory) => { // CORRECTED: Parameter is now 'number'
+  const handleUpdateTruckCategory = useCallback(async (truckId: number, category: TruckCategory) => {
       const { data, error } = await supabase.from('trucks').update({ category }).match({ id: truckId }).select()
       if (error) {
           console.error('Error updating truck category', error)

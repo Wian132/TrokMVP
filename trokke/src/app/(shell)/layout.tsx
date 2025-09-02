@@ -9,6 +9,14 @@ import { AuthProvider } from '@/components/AuthContext';
 import { useEffect, useState, useMemo } from 'react';
 import Chatbot from '@/components/Chatbot';
 
+// --- TYPE FIX ---
+// Define the expected shape of the data returned from the Supabase query.
+// This tells TypeScript that 'roles' can be an object or an array of objects, each with a 'name'.
+type ProfileWithRole = {
+  roles: { name: string } | { name: string }[] | null;
+};
+
+
 export default function ShellLayout({
   children,
 }: {
@@ -22,7 +30,6 @@ export default function ShellLayout({
   const pathname = usePathname();
 
   const pageTitle = useMemo(() => {
-    // UPDATED: New and renamed titles
     const routeTitles: Record<string, string> = {
       '/admin/trucks': 'Fleet Overview',
       '/admin/fleet-analytics': 'Fleet Analytics',
@@ -31,6 +38,7 @@ export default function ShellLayout({
       '/admin/link-workers': 'Link Worker Names',
       '/admin/trips': 'View Truck Trips',
       '/admin/my-shops': 'Manage My Shops',
+      '/admin/manage-roles': 'Manage Roles',
       '/client/dashboard': 'Dashboard',
       '/client/my-shops': 'My Shops',
       '/worker/dashboard': 'Dashboard',
@@ -39,16 +47,21 @@ export default function ShellLayout({
       '/worker/log-trip': 'Log Trip',
       '/refueler/dashboard': 'Refueler Dashboard',
       '/refueler/refuels': 'Log Refuel',
+      // ADDED: Titles for new roles
+      '/checker/dashboard': 'Checker Dashboard',
+      '/checker/pre-trip-check': 'Check a Vehicle',
+      '/floor-manager/dashboard': 'Floor Manager Dashboard',
+      '/floor-manager/refuels': 'Log a Refuel',
+      '/floor-manager/pre-trip-check': 'Check a Vehicle',
     };
     
-    // Find a matching title, including for dynamic child routes
     for (const route in routeTitles) {
         if (pathname.startsWith(route)) {
             return routeTitles[route];
         }
     }
     
-    return 'Dashboard'; // Default title
+    return 'Dashboard';
   }, [pathname]);
 
 
@@ -60,19 +73,29 @@ export default function ShellLayout({
         return;
       }
 
+      // --- FIX START ---
+      // We cast the result of the query to our new, more specific type.
       const { data: profile, error } = await supabase
         .from('profiles')
-        .select('role')
+        .select('roles(name)') 
         .eq('id', user.id)
         .single();
       
       if (error || !profile) {
-        console.error('Error fetching profile or profile not found:', error);
+        console.error('Error fetching profile or profile not found in layout:', error);
         await supabase.auth.signOut();
         router.push('/login');
         return;
       }
-      setUserRole(profile.role);
+      
+      // Now TypeScript understands the shape of 'profile' and 'profile.roles'.
+      const typedProfile = profile as ProfileWithRole;
+      const roleRelation = typedProfile.roles;
+      const roleName = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
+
+      setUserRole(roleName || null);
+      // --- FIX END ---
+      
       setIsLoading(false);
     };
     checkUser();
@@ -112,3 +135,4 @@ export default function ShellLayout({
     </AuthProvider>
   );
 }
+

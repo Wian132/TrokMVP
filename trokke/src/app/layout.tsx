@@ -6,9 +6,6 @@ import { createClient } from "@/utils/supabase/server";
 import { ReactNode } from "react";
 import Script from "next/script";
 
-// This line has been removed:
-// export const dynamic = "force-dynamic";
-
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
@@ -33,8 +30,8 @@ export default async function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider serverSession={session}>{children}</AuthProvider>
-        {/* Load the Google Maps script globally */}
-        <Script src={googleMapsUrl} strategy="beforeInteractive" />
+        {/* Load the Google Maps script globally with async and defer */}
+        <Script src={googleMapsUrl} async defer />
       </body>
     </html>
   );

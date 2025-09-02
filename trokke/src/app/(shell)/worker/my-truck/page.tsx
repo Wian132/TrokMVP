@@ -4,7 +4,6 @@ export const dynamic = 'force-dynamic';
 
 
 export default async function MyTruckPage() {
-  // Add the 'await' keyword here to correctly initialize the client
   const supabase = await createClient();
   
   const { data: { user } } = await supabase.auth.getUser();
@@ -30,11 +29,23 @@ export default async function MyTruckPage() {
     );
   }
 
-  const { data: truck } = await supabase
+  // FIX: Query for truck using 'primary_driver_id' first, then 'active_driver_id'
+  let { data: truck } = await supabase
     .from('trucks')
     .select('*')
-    .eq('assigned_worker_id', worker.id)
+    .eq('primary_driver_id', worker.id)
     .single();
+
+  if (!truck) {
+    // If not a primary driver of any truck, check if they are an active driver
+    const { data: active_truck } = await supabase
+        .from('trucks')
+        .select('*')
+        .eq('active_driver_id', worker.id)
+        .single();
+    truck = active_truck;
+  }
+
 
   return (
     <div className="p-6">

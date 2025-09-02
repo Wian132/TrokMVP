@@ -19,7 +19,8 @@ import {
   ArchiveBoxIcon,
   ChartBarIcon,
   PencilSquareIcon,
-  BeakerIcon // Using as Fuel Icon
+  BeakerIcon, // Using as Fuel Icon
+  ShieldCheckIcon // For Manage Roles
 } from '@heroicons/react/24/solid';
 
 interface NavLink {
@@ -29,7 +30,7 @@ interface NavLink {
 }
 
 interface SidebarProps {
-  userRole: "admin" | "client" | "worker" | "refueler" | string;
+  userRole: string; // Can be any of the new roles
   isSidebarOpen: boolean;
   setSidebarOpen: (isOpen: boolean) => void;
 }
@@ -42,6 +43,8 @@ const adminCoreLinks: NavLink[] = [
   { href: "/admin/workers", label: "Workers", icon: UsersIcon },
   { href: "/admin/trips", label: "Trips", icon: MapPinIcon },
   { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
+  { href: "/admin/manage-roles", label: "Manage Roles", icon: ShieldCheckIcon },
+  { href: "/admin/diesel", label: "Diesel", icon: BeakerIcon },
 ];
 
 const adminFutureLinks: NavLink[] = [
@@ -66,6 +69,19 @@ const refuelerLinks: NavLink[] = [
   { href: "/refueler/refuels", label: "Log Refuel", icon: BeakerIcon },
 ];
 
+// New links for Checker and FloorManager
+const checkerLinks: NavLink[] = [
+    { href: "/checker/dashboard", label: "Dashboard", icon: ChartPieIcon },
+    { href: "/checker/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
+];
+
+const floorManagerLinks: NavLink[] = [
+    { href: "/floor-manager/dashboard", label: "Dashboard", icon: ChartPieIcon },
+    { href: "/floor-manager/refuels", label: "Log Refuel", icon: BeakerIcon },
+    { href: "/floor-manager/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
+];
+
+
 export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: SidebarProps) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
@@ -74,16 +90,22 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
   let coreLinks: NavLink[] = [];
   let futureLinks: NavLink[] = [];
 
-  if (userRole === "admin") {
+  // Updated role handling
+  if (userRole === "SuperAdmin" || userRole === "Admin") {
     coreLinks = adminCoreLinks;
     futureLinks = adminFutureLinks;
-  } else if (userRole === "client") {
+  } else if (userRole === "Client") {
     coreLinks = clientLinks;
-  } else if (userRole === "worker") {
+  } else if (userRole === "Worker") {
     coreLinks = workerLinks;
-  } else if (userRole === "refueler") {
+  } else if (userRole === "Refueler") {
     coreLinks = refuelerLinks;
+  } else if (userRole === "Checker") {
+    coreLinks = checkerLinks;
+  } else if (userRole === "FloorManager") {
+    coreLinks = floorManagerLinks;
   }
+
 
   const sidebarContent = (
     <>

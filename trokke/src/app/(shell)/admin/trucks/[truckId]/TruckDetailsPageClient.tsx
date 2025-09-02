@@ -1,4 +1,3 @@
-// src/app/(shell)/admin/trucks/[truckId]/TruckDetailsPageClient.tsx
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
@@ -15,11 +14,14 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
-// --- Type Definitions ---
-type TruckWithWorkerProfile = Database['public']['Tables']['trucks']['Row'] & {
-  workers: {
+// --- Type Definitions (Updated) ---
+type TruckWithDrivers = Database['public']['Tables']['trucks']['Row'] & {
+  active_driver: {
     profiles: Database['public']['Tables']['profiles']['Row'] | null
-  } | null
+  } | null;
+  primary_driver: {
+    profiles: Database['public']['Tables']['profiles']['Row'] | null
+  } | null;
 };
 type Trip = Database['public']['Tables']['truck_trips']['Row'];
 type PreTripCheck = Database['public']['Tables']['pre_trip_checks']['Row'];
@@ -58,7 +60,7 @@ export default function TruckDetailsPageClient() {
     const params = useParams();
     const truckIdParam = Array.isArray(params.truckId) ? params.truckId[0] : params.truckId;
     
-    const [truck, setTruck] = useState<TruckWithWorkerProfile | null>(null);
+    const [truck, setTruck] = useState<TruckWithDrivers | null>(null);
     const [lastTrip, setLastTrip] = useState<Trip | null>(null);
     const [previousTrip, setPreviousTrip] = useState<Trip | null>(null);
     const [lastCheck, setLastCheck] = useState<PreTripCheck | null>(null);
@@ -79,18 +81,26 @@ export default function TruckDetailsPageClient() {
         }
 
         try {
-            const truckPromise = supabase.from('trucks').select('*, workers(profiles(id, full_name))').eq('id', id).single();
+            const truckPromise = supabase
+                .from('trucks')
+                .select('*, active_driver:workers!active_driver_id(profiles(id, full_name)), primary_driver:workers!primary_driver_id(profiles(id, full_name))')
+                .eq('id', id)
+                .single();
+            
             const tripsPromise = supabase.from('truck_trips').select('*').eq('truck_id', id).order('trip_date', { ascending: false }).limit(2);
-            const checkPromise = supabase.from('pre_trip_checks').select('*').eq('truck_id', id).order('checked_at', { ascending: false }).limit(1).single();
+            const checkPromise = supabase.from('pre_trip_checks').select('*').eq('truck_id', id).order('checked_at', { ascending: false }).limit(1);
+            
             const [truckResult, tripsResult, checkResult] = await Promise.all([truckPromise, tripsPromise, checkPromise]);
 
             if (truckResult.error) throw truckResult.error;
-            setTruck(truckResult.data as TruckWithWorkerProfile);
+            setTruck(truckResult.data as TruckWithDrivers);
 
             const tripsData = tripsResult.data || [];
             setLastTrip(tripsData.length > 0 ? tripsData[0] : null);
             setPreviousTrip(tripsData.length > 1 ? tripsData[1] : null);
-            setLastCheck(checkResult.data as PreTripCheck | null);
+            
+            const checkData = checkResult.data || [];
+            setLastCheck(checkData.length > 0 ? checkData[0] : null);
         } catch (err: unknown) {
             setError(err instanceof Error ? err.message : "An unexpected error occurred.");
         } finally {
@@ -99,8 +109,10 @@ export default function TruckDetailsPageClient() {
     }, [truckIdParam]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        if (truckIdParam) {
+           fetchData();
+        }
+    }, [truckIdParam, fetchData]);
 
     const reportedIssues = useMemo(() => parseReportedIssues(lastCheck), [lastCheck]);
     const hasMissingFields = useMemo(() => !truck ? false : !truck.make || !truck.model || !truck.year || !truck.vin || !truck.service_interval_km || !truck.next_service_km, [truck]);
@@ -111,8 +123,6 @@ export default function TruckDetailsPageClient() {
 
     return (
         <div className="flex-1 space-y-6 p-4 md:p-8 pt-6 bg-gray-50 text-black">
-            {/* ... The rest of the JSX from the original TruckDetailsPageClient ... */}
-            {/* The following is the original JSX content, no changes needed here */}
             <div className="flex items-center justify-between space-y-2">
                 <div>
                     <h2 className="text-xl font-bold tracking-tight text-gray-700">{truck.make || 'Unknown Make'} {truck.model || 'Unknown Model'}</h2>
@@ -121,8 +131,9 @@ export default function TruckDetailsPageClient() {
             </div>
             {hasMissingFields && <TruckDetailsCard truck={truck} onTruckUpdate={fetchData} />}
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                <DriverAssignmentCard truck={truck} onTruckUpdate={fetchData} />
-                <Card className="lg:col-span-2 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><GanttChartSquare /> Last Trip Details</CardTitle></CardHeader>
+                <DriverCard type="active" truck={truck} onTruckUpdate={fetchData} />
+                <DriverCard type="primary" truck={truck} onTruckUpdate={fetchData} />
+                <Card className="lg:col-span-1 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><GanttChartSquare /> Last Trip Details</CardTitle></CardHeader>
                     <CardContent>
                         {lastTrip ? (
                             <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
@@ -175,11 +186,7 @@ export default function TruckDetailsPageClient() {
     );
 }
 
-// --- Sub-components (TruckDetailsCard, ServiceSummaryCard, etc.) ---
-// These sub-components can remain in the file, no changes are needed to them.
-// Make sure to include all the helper components (InfoItem, DriverAssignmentCard, etc.) from the original file.
-
-function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithWorkerProfile, onTruckUpdate: () => void }) {
+function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, onTruckUpdate: () => void }) {
     const [isEditing, setIsEditing] = useState(false);
     const [formData, setFormData] = useState<TruckUpdatePayload>({});
     const [error, setError] = useState<string | null>(null);
@@ -256,7 +263,7 @@ const InfoItem = ({ label, value }: { label: string; value: string | number | nu
     <div><p className="text-gray-500">{label}</p><p className={`font-semibold whitespace-pre-wrap ${!value ? 'text-red-500' : 'text-gray-800'}`}>{!value ? '!! Not Set' : value}</p></div>
 );
 
-function ServiceSummaryCard({ truck }: { truck: TruckWithWorkerProfile }) {
+function ServiceSummaryCard({ truck }: { truck: TruckWithDrivers }) {
     const serviceUnit = truck.is_hours_based ? 'hours' : 'km';
     
     const renderServiceStatus = () => {
@@ -285,22 +292,24 @@ function ServiceSummaryCard({ truck }: { truck: TruckWithWorkerProfile }) {
     );
 }
 
-function DriverAssignmentCard({ truck, onTruckUpdate }: { truck: TruckWithWorkerProfile, onTruckUpdate: () => void }) {
+function DriverCard({ type, truck, onTruckUpdate }: { type: 'active' | 'primary', truck: TruckWithDrivers, onTruckUpdate: () => void }) {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [availableWorkers, setAvailableWorkers] = useState<AvailableWorker[]>([]);
     const [selectedWorkerId, setSelectedWorkerId] = useState<string>('');
     const [loadingWorkers, setLoadingWorkers] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+
+    const isPrimary = type === 'primary';
+    const title = isPrimary ? 'Primary Driver' : 'Active Driver';
+    const driverProfile = isPrimary ? truck.primary_driver?.profiles : truck.active_driver?.profiles;
+    const driverId = isPrimary ? truck.primary_driver_id : truck.active_driver_id;
 
     const fetchAvailableWorkers = async () => {
         setLoadingWorkers(true);
         const supabase = createClient();
-        const { data: assignedTrucks } = await supabase.from('trucks').select('assigned_worker_id').not('assigned_worker_id', 'is', null);
-        const assignedWorkerIds = assignedTrucks?.map(t => t.assigned_worker_id).filter(Boolean) || [];
-        const query = supabase.from('workers').select('id, profiles(full_name)');
-        if (assignedWorkerIds.length > 0) {
-            query.not('id', 'in', `(${assignedWorkerIds.join(',')})`);
-        }
-        const { data: workersData } = await query;
+        const { data: workersData } = await supabase.from('workers').select('id, profiles(full_name)');
+        
         if (workersData) {
             const formattedWorkers = workersData.map((w: WorkerWithProfileData) => ({
                 id: w.id,
@@ -312,29 +321,63 @@ function DriverAssignmentCard({ truck, onTruckUpdate }: { truck: TruckWithWorker
     };
 
     const handleOpenModal = () => {
+        setError(null);
         fetchAvailableWorkers();
-        setSelectedWorkerId(truck.assigned_worker_id?.toString() || '');
+        setSelectedWorkerId(driverId?.toString() || '');
         setIsModalOpen(true);
     };
 
     const handleSaveAssignment = async () => {
+        console.log(`[DriverCard] Attempting to save assignment for ${type} driver.`);
+        setIsSaving(true);
+        setError(null);
+        
         const supabase = createClient();
         const workerIdToAssign = selectedWorkerId === 'unassign' ? null : parseInt(selectedWorkerId, 10);
-        await supabase.from('trucks').update({ assigned_worker_id: workerIdToAssign }).eq('id', truck.id);
-        onTruckUpdate();
-        setIsModalOpen(false);
-    };
+        
+        const updatePayload: TruckUpdatePayload = isPrimary 
+            ? { primary_driver_id: workerIdToAssign } 
+            : { active_driver_id: workerIdToAssign };
 
-    const driverProfile = truck.workers?.profiles;
+        console.log('[DriverCard] Payload to be sent:', updatePayload);
+        console.log('[DriverCard] Updating truck ID:', truck.id);
+            
+        try {
+            const { data, error: updateError } = await supabase
+                .from('trucks')
+                .update(updatePayload)
+                .eq('id', truck.id)
+                .select(); // Use .select() to get back the data and see what was changed
+
+            if (updateError) {
+                console.error('[DriverCard] Supabase update error:', updateError);
+                throw updateError;
+            }
+            
+            console.log('[DriverCard] Supabase update successful. Response data:', data);
+            onTruckUpdate();
+            setIsModalOpen(false);
+        } catch (err: unknown) {
+            console.error("[DriverCard] Failed to save assignment:", err);
+            if (err instanceof Error) {
+                setError(`Error: ${err.message}`);
+            } else {
+                setError("An unknown error occurred.");
+            }
+        } finally {
+            console.log(`[DriverCard] Finished save attempt for ${type} driver.`);
+            setIsSaving(false);
+        }
+    };
 
     return (
         <Card className="lg:col-span-1 bg-white">
             <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-gray-800"><User /> Current Driver</CardTitle>
+                <CardTitle className="flex items-center gap-2 text-gray-800"><User /> {title}</CardTitle>
                 <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                     <DialogTrigger asChild><Button size="sm" onClick={handleOpenModal} className="bg-green-700 text-white hover:bg-green-800">{driverProfile ? 'Change' : 'Assign'}</Button></DialogTrigger>
                     <DialogContent className="bg-green-100 text-green-900">
-                        <DialogHeader><DialogTitle>Assign Driver to {truck.license_plate}</DialogTitle><DialogDescription className="text-green-800">Select an available worker or unassign the current driver.</DialogDescription></DialogHeader>
+                        <DialogHeader><DialogTitle>Assign {title} to {truck.license_plate}</DialogTitle><DialogDescription className="text-green-800">Select an available worker or unassign the current driver.</DialogDescription></DialogHeader>
                         {loadingWorkers ? <p>Loading...</p> : (
                             <Select onValueChange={setSelectedWorkerId} defaultValue={selectedWorkerId}>
                                 <SelectTrigger className="bg-white text-black"><SelectValue placeholder="Select a driver..." /></SelectTrigger>
@@ -344,9 +387,12 @@ function DriverAssignmentCard({ truck, onTruckUpdate }: { truck: TruckWithWorker
                                 </SelectContent>
                             </Select>
                         )}
+                        {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
                         <DialogFooter className="mt-4">
                             <Button variant="ghost" onClick={() => setIsModalOpen(false)} className="text-green-900 hover:bg-green-200">Cancel</Button>
-                            <Button onClick={handleSaveAssignment} disabled={!selectedWorkerId} className="bg-green-700 text-white hover:bg-green-800">Save Assignment</Button>
+                            <Button onClick={handleSaveAssignment} disabled={!selectedWorkerId || isSaving} className="bg-green-700 text-white hover:bg-green-800">
+                                {isSaving ? 'Saving...' : 'Save Assignment'}
+                            </Button>
                         </DialogFooter>
                     </DialogContent>
                 </Dialog>
@@ -360,7 +406,7 @@ function DriverAssignmentCard({ truck, onTruckUpdate }: { truck: TruckWithWorker
                             <p className="text-sm text-gray-500">ID: {driverProfile.id.substring(0, 8)}...</p>
                         </div>
                     </div>
-                ) : <p className="text-gray-500">No driver currently assigned.</p>}
+                ) : <p className="text-gray-500">No {type} driver currently assigned.</p>}
             </CardContent>
         </Card>
     );

@@ -25,48 +25,47 @@ export const AuthProvider = ({
   
   const [session, setSession] = useState<Session | null>(serverSession);
   const [user, setUser] = useState<User | null>(serverSession?.user ?? null);
-  // This loading state is the key to fixing the login loop.
   const [loading, setLoading] = useState(true);
 
   const signOut = useCallback(async () => {
     await supabase.auth.signOut();
+    // After sign out, always redirect to the login page.
     router.push('/login');
+    router.refresh(); // Ensure the page reloads to clear any state.
   }, [supabase, router]);
 
   useEffect(() => {
-    // This listener handles all auth changes after the initial load.
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
-      setLoading(false); // Auth state is confirmed, stop loading.
+      setLoading(false);
+
+      // If the user logs out from another tab, redirect them to login.
+      if (_event === 'SIGNED_OUT') {
+        router.push('/login');
+      }
     });
 
-    // On initial mount, if there's no server session, we can stop loading.
-    // This handles the case where a non-logged-in user somehow hits a protected route.
-    if (!serverSession) {
+    // Also check the user on initial load to handle session restoration.
+    const checkUser = async () => {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            setUser(user);
+        }
         setLoading(false);
-    }
+    };
+
+    checkUser();
 
     return () => {
       subscription.unsubscribe();
     };
-  }, [serverSession, router, supabase]);
-  
-  // When the component first mounts, if we have a session from the server,
-  // we can consider the user authenticated and stop loading immediately.
-  useEffect(() => {
-    if (serverSession) {
-      setLoading(false);
-    }
-  }, [serverSession]);
-
+  }, [router, supabase]);
 
   const value = { session, user, signOut };
 
-  // Do not render the protected parts of the application until the client-side
-  // auth check is complete. This prevents the flash of old content or redirects.
   if (loading) {
     return (
         <div className="flex items-center justify-center min-h-screen">
@@ -89,3 +88,4 @@ export const useAuth = () => {
   }
   return context;
 };
+

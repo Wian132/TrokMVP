@@ -7,11 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
-  __InternalSupabase: {
-    PostgrestVersion: "13.0.4"
-  }
   public: {
     Tables: {
       business_stores: {
@@ -99,6 +94,48 @@ export type Database = {
           },
         ]
       }
+      diesel_purchases: {
+        Row: {
+          id: number
+          liters: number
+          price_per_liter: number
+          purchase_date: string
+        }
+        Insert: {
+          id?: number
+          liters: number
+          price_per_liter: number
+          purchase_date?: string
+        }
+        Update: {
+          id?: number
+          liters?: number
+          price_per_liter?: number
+          purchase_date?: string
+        }
+        Relationships: []
+      }
+      permissions: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: number
+          name?: string
+        }
+        Relationships: []
+      }
       pre_trip_checks: {
         Row: {
           brakes_ok: boolean
@@ -168,15 +205,15 @@ export type Database = {
             foreignKeyName: "pre_trip_checks_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "pre_trip_checks_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "pre_trip_checks_worker_id_fkey"
@@ -192,21 +229,29 @@ export type Database = {
           contact_phone: string | null
           full_name: string | null
           id: string
-          role: Database["public"]["Enums"]["user_role"]
+          role_id: number | null
         }
         Insert: {
           contact_phone?: string | null
           full_name?: string | null
           id: string
-          role?: Database["public"]["Enums"]["user_role"]
+          role_id?: number | null
         }
         Update: {
           contact_phone?: string | null
           full_name?: string | null
           id?: string
-          role?: Database["public"]["Enums"]["user_role"]
+          role_id?: number | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       refueler_logs: {
         Row: {
@@ -215,8 +260,9 @@ export type Database = {
           notes: string | null
           odo_reading: number
           refuel_date: string
-          refueler_id: number
+          tank_id: number | null
           truck_id: number
+          worker_id: number
         }
         Insert: {
           id?: never
@@ -224,8 +270,9 @@ export type Database = {
           notes?: string | null
           odo_reading: number
           refuel_date?: string
-          refueler_id: number
+          tank_id?: number | null
           truck_id: number
+          worker_id: number
         }
         Update: {
           id?: never
@@ -233,15 +280,23 @@ export type Database = {
           notes?: string | null
           odo_reading?: number
           refuel_date?: string
-          refueler_id?: number
+          tank_id?: number | null
           truck_id?: number
+          worker_id?: number
         }
         Relationships: [
           {
-            foreignKeyName: "refueler_logs_refueler_id_fkey"
-            columns: ["refueler_id"]
+            foreignKeyName: "refueler_logs_tank_id_fkey"
+            columns: ["tank_id"]
             isOneToOne: false
-            referencedRelation: "refuelers"
+            referencedRelation: "diesel_purchases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "refueler_logs_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
             referencedColumns: ["id"]
           },
           {
@@ -252,39 +307,64 @@ export type Database = {
             referencedColumns: ["truck_id"]
           },
           {
-            foreignKeyName: "refueler_logs_truck_id_fkey"
-            columns: ["truck_id"]
+            foreignKeyName: "refueler_logs_worker_id_fkey"
+            columns: ["worker_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
+            referencedRelation: "workers"
             referencedColumns: ["id"]
           },
         ]
       }
-      refuelers: {
+      role_permissions: {
         Row: {
-          created_at: string
           id: number
-          profile_id: string
+          permission_id: number | null
+          role_id: number | null
         }
         Insert: {
-          created_at?: string
-          id?: never
-          profile_id: string
+          id?: number
+          permission_id?: number | null
+          role_id?: number | null
         }
         Update: {
-          created_at?: string
-          id?: never
-          profile_id?: string
+          id?: number
+          permission_id?: number | null
+          role_id?: number | null
         }
         Relationships: [
           {
-            foreignKeyName: "refuelers_profile_id_fkey"
-            columns: ["profile_id"]
-            isOneToOne: true
-            referencedRelation: "profiles"
+            foreignKeyName: "role_permissions_permission_id_fkey"
+            columns: ["permission_id"]
+            isOneToOne: false
+            referencedRelation: "permissions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "role_permissions_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
             referencedColumns: ["id"]
           },
         ]
+      }
+      roles: {
+        Row: {
+          created_at: string | null
+          id: number
+          name: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          name: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          name?: string
+        }
+        Relationships: []
       }
       services: {
         Row: {
@@ -337,15 +417,15 @@ export type Database = {
             foreignKeyName: "services_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "services_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
         ]
       }
@@ -373,15 +453,15 @@ export type Database = {
             foreignKeyName: "truck_locations_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "truck_locations_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
         ]
       }
@@ -448,15 +528,15 @@ export type Database = {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "truck_trips_worker_id_fkey"
@@ -469,7 +549,7 @@ export type Database = {
       }
       trucks: {
         Row: {
-          assigned_worker_id: number | null
+          active_driver_id: number | null
           category: string | null
           created_at: string
           current_odo: number | null
@@ -481,6 +561,7 @@ export type Database = {
           model: string | null
           next_service_km: number | null
           notes: string | null
+          primary_driver_id: number | null
           service_interval_km: number | null
           status: Database["public"]["Enums"]["truck_status"]
           type: string | null
@@ -488,7 +569,7 @@ export type Database = {
           year: number | null
         }
         Insert: {
-          assigned_worker_id?: number | null
+          active_driver_id?: number | null
           category?: string | null
           created_at?: string
           current_odo?: number | null
@@ -500,6 +581,7 @@ export type Database = {
           model?: string | null
           next_service_km?: number | null
           notes?: string | null
+          primary_driver_id?: number | null
           service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
@@ -507,7 +589,7 @@ export type Database = {
           year?: number | null
         }
         Update: {
-          assigned_worker_id?: number | null
+          active_driver_id?: number | null
           category?: string | null
           created_at?: string
           current_odo?: number | null
@@ -519,6 +601,7 @@ export type Database = {
           model?: string | null
           next_service_km?: number | null
           notes?: string | null
+          primary_driver_id?: number | null
           service_interval_km?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
@@ -527,8 +610,15 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "trucks_assigned_worker_id_fkey"
-            columns: ["assigned_worker_id"]
+            foreignKeyName: "trucks_active_driver_id_fkey"
+            columns: ["active_driver_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trucks_primary_driver_id_fkey"
+            columns: ["primary_driver_id"]
             isOneToOne: false
             referencedRelation: "workers"
             referencedColumns: ["id"]
@@ -605,23 +695,28 @@ export type Database = {
     }
     Functions: {
       calculate_kml_for_period: {
-        Args: { end_date: string; start_date: string }
+        Args: {
+          start_date: string
+          end_date: string
+        }
         Returns: {
-          avg_kml: number
-          first_odo: number
-          first_odo_date: string
-          last_odo: number
-          last_odo_date: string
+          truck_id: number
           latest_reading: number
-          liters_rows_included: number
-          odo_rows_included: number
+          first_odo: number
+          last_odo: number
+          first_odo_date: string
+          last_odo_date: string
           total_km: number
           total_liters: number
-          truck_id: number
+          avg_kml: number
+          odo_rows_included: number
+          liters_rows_included: number
         }[]
       }
       delete_user: {
-        Args: { user_id: string }
+        Args: {
+          user_id: string
+        }
         Returns: undefined
       }
       get_all_map_markers: {
@@ -631,64 +726,74 @@ export type Database = {
       get_all_truck_trip_counts: {
         Args: Record<PropertyKey, never>
         Returns: {
-          total_trips: number
           truck_id: number
+          total_trips: number
         }[]
       }
       get_all_worker_analytics: {
-        Args: { end_date?: string; start_date?: string }
+        Args: {
+          start_date?: string
+          end_date?: string
+        }
         Returns: {
+          worker_id: number
+          worker_name: string
+          total_trips: number
           total_km: number
           total_liters: number
           total_preday_checks: number
-          total_trips: number
-          worker_id: number
-          worker_name: string
         }[]
       }
       get_client_truck_and_store_locations: {
-        Args: { client_profile_id: string }
+        Args: {
+          client_profile_id: string
+        }
         Returns: Json
       }
       get_fleet_analytics: {
-        Args:
-          | Record<PropertyKey, never>
-          | { end_date: string; start_date: string }
+        Args: {
+          start_date: string
+          end_date: string
+        }
         Returns: {
-          assigned_worker_name: string
-          avg_kml: number
-          cost_per_km: number
-          current_odo: number
+          truck_id: number
           license_plate: string
           make: string
           model: string
-          next_service_km: number
-          total_fuel_cost: number
+          assigned_worker_name: string
           total_km: number
           total_liters: number
+          total_fuel_cost: number
           total_service_cost: number
-          truck_id: number
+          avg_kml: number
+          cost_per_km: number
+          current_odo: number
+          next_service_km: number
         }[]
+      }
+      get_my_role: {
+        Args: Record<PropertyKey, never>
+        Returns: string
       }
       get_truck_details_with_analytics: {
         Args: Record<PropertyKey, never>
         Returns: {
-          category: string
-          has_pre_trip_issues: boolean
           id: number
-          is_hours_based: boolean
-          latest_km_per_liter: number
-          latest_odometer: number
           license_plate: string
           make: string
-          missing_fields: string[]
           model: string
-          next_service_km: number
-          notes: string
-          status: string
-          total_trips: number
-          worker_name: string
           year: number
+          category: string
+          status: string
+          notes: string
+          worker_name: string
+          latest_odometer: number
+          latest_km_per_liter: number
+          total_trips: number
+          is_hours_based: boolean
+          missing_fields: string[]
+          next_service_km: number
+          has_pre_trip_issues: boolean
         }[]
       }
       link_unmapped_trips: {
@@ -702,7 +807,14 @@ export type Database = {
     }
     Enums: {
       truck_status: "active" | "inactive" | "under_service" | "decommissioned"
-      user_role: "admin" | "worker" | "client" | "refueler"
+      user_role:
+        | "admin"
+        | "worker"
+        | "client"
+        | "refueler"
+        | "SuperAdmin"
+        | "floormanager"
+        | "checker"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -712,31 +824,30 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<
+  keyof Database,
+  "public"
+>]
 
 export type Tables<
-  DefaultSchemaTableNameOrOptions extends
+  PublicTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
+  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+    ? keyof (DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? (DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+  : PublicTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
         DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
+        DefaultSchema["Views"])[PublicTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -744,24 +855,20 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
+  PublicTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+    ? keyof DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][PublicTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -769,24 +876,20 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
+  PublicTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
+  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+    ? keyof DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
+  : PublicTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][PublicTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -794,20 +897,16 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
+  PublicEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
+  EnumName extends PublicEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+    ? keyof DatabaseWithoutInternals[PublicEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
+> = PublicEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
+  ? DatabaseWithoutInternals[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : PublicEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][PublicEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
@@ -831,7 +930,16 @@ export const Constants = {
   public: {
     Enums: {
       truck_status: ["active", "inactive", "under_service", "decommissioned"],
-      user_role: ["admin", "worker", "client", "refueler"],
+      user_role: [
+        "admin",
+        "worker",
+        "client",
+        "refueler",
+        "SuperAdmin",
+        "floormanager",
+        "checker",
+      ],
     },
   },
 } as const
+

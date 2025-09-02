@@ -1,26 +1,26 @@
-// src/app/(shell)/refueler/dashboard/page.tsx
+// src/app/(shell)/checker/dashboard/page.tsx
 'use client';
 
 import { useAuth } from '@/components/AuthContext';
-import { BeakerIcon, ChartBarIcon } from '@heroicons/react/24/solid';
+import { WrenchScrewdriverIcon, ChartBarIcon } from '@heroicons/react/24/solid';
 import Link from 'next/link';
 
-export default function RefuelerDashboardPage() {
+export default function CheckerDashboardPage() {
   const { user } = useAuth();
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800">Refueler Dashboard</h1>
+        <h1 className="text-2xl font-bold text-gray-800">Checker Dashboard</h1>
         <p className="text-gray-600 mt-1">Welcome, {user?.email}!</p>
 
         <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
-          <Link href="/refueler/refuels" className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
+          <Link href="/checker/pre-trip-check" className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow">
             <div className="flex items-center gap-4">
-              <BeakerIcon className="h-10 w-10 text-indigo-600" />
+              <WrenchScrewdriverIcon className="h-10 w-10 text-indigo-600" />
               <div>
-                <h2 className="text-lg font-bold text-gray-800">Log a Refuel</h2>
-                <p className="text-sm text-gray-600">Enter a new refuel record for a vehicle.</p>
+                <h2 className="text-lg font-bold text-gray-800">Perform a Check</h2>
+                <p className="text-sm text-gray-600">Complete a pre-trip check for any vehicle.</p>
               </div>
             </div>
           </Link>

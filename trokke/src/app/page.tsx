@@ -16,7 +16,7 @@ export default async function HomePage() {
     // Fetch the user's profile from the 'profiles' table to get the role.
     const { data: profile, error } = await supabase
       .from('profiles')
-      .select('role')
+      .select('roles(name)') // Join with the roles table
       .eq('id', user.id)
       .single();
 
@@ -25,30 +25,40 @@ export default async function HomePage() {
       console.log('[HomePage] Redirecting to /login due to missing profile.');
       redirect('/login');
     }
-
-    const userRole = profile.role;
+    
+    // The role name is now nested inside the 'roles' object
+    const userRole = Array.isArray(profile.roles) ? profile.roles[0]?.name : profile.roles?.name;
     console.log(`[HomePage] Profile found. User Role: ${userRole}`);
 
     switch (userRole) {
-      case 'admin':
+      case 'SuperAdmin':
+      case 'Admin':
         console.log('[HomePage] Redirecting to /admin/trucks');
         redirect('/admin/trucks');
         break;
-      case 'worker':
+      case 'FloorManager':
+        console.log('[HomePage] Redirecting to /floor-manager/dashboard');
+        redirect('/floor-manager/dashboard');
+        break;
+      case 'Worker':
         console.log('[HomePage] Redirecting to /worker/dashboard');
         redirect('/worker/dashboard');
         break;
-      case 'client':
+      case 'Client':
         console.log('[HomePage] Redirecting to /client/dashboard');
         redirect('/client/dashboard');
         break;
-      case 'refueler': // Add the new refueler case
+      case 'Refueler':
         console.log('[HomePage] Redirecting to /refueler/dashboard');
         redirect('/refueler/dashboard');
         break;
+       case 'Checker':
+        console.log('[HomePage] Redirecting to /checker/dashboard');
+        redirect('/checker/dashboard');
+        break;
       default:
-        // This case will be hit if the role is unrecognized.
-        console.log(`[HomePage] User has an unrecognized role: '${userRole}'. Redirecting to /login.`);
+        // This case will be hit if the role is unrecognized or null.
+        console.log(`[HomePage] User has an unrecognized or null role: '${userRole}'. Redirecting to /login.`);
         redirect('/login');
     }
   }
