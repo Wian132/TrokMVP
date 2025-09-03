@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, Fuel, AlertTriangle, Wrench, Calendar, MapPin, Route, GanttChartSquare, Pencil, CheckCircle2 } from 'lucide-react';
+import { User, Fuel, AlertTriangle, Wrench, Calendar, MapPin, Route, GanttChartSquare, Pencil, CheckCircle2, Info } from 'lucide-react';
 import { Database } from '@/types/supabase';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -128,7 +128,13 @@ export default function TruckDetailsPageClient() {
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 <DriverCard type="active" truck={truck} onTruckUpdate={fetchData} />
                 <DriverCard type="primary" truck={truck} onTruckUpdate={fetchData} />
-                <Card className="lg:col-span-1 bg-white"><CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><GanttChartSquare /> Last Trip Details</CardTitle></CardHeader>
+                <Card className="lg:col-span-1 bg-white">
+                    <CardHeader>
+                        <CardTitle className="flex items-center text-gray-800">
+                            <GanttChartSquare className="mr-2" /> Last Trip Details
+                            <InfoTooltip text="A summary of the most recently logged trip for this vehicle." />
+                        </CardTitle>
+                    </CardHeader>
                     <CardContent>
                         {lastTrip ? (
                             <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
@@ -147,7 +153,10 @@ export default function TruckDetailsPageClient() {
                 <Card className="lg:col-span-3 bg-white">
                     <CardHeader className="flex flex-row items-center justify-between">
                         <div>
-                            <CardTitle className="flex items-center gap-2 text-gray-800"><AlertTriangle className="text-red-500" /> Reported Issues</CardTitle>
+                            <CardTitle className="flex items-center text-gray-800">
+                                <AlertTriangle className="mr-2 text-red-500" /> Reported Issues
+                                <InfoTooltip text="A list of problems or defects reported during the vehicle's latest pre-trip inspection." />
+                            </CardTitle>
                             <CardDescription className="text-gray-500">Issues from the latest pre-trip check on {lastCheck ? new Date(lastCheck.checked_at).toLocaleString() : 'N/A'}.</CardDescription>
                         </div>
                         {reportedIssues.length > 0 && !lastCheck?.issues_resolved && (
@@ -219,7 +228,10 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
         <Card className="lg:col-span-3 bg-white">
             <CardHeader className="flex flex-row items-center justify-between">
                 <div>
-                    <CardTitle className="flex items-center gap-2 text-gray-800">Vehicle Information</CardTitle>
+                    <CardTitle className="flex items-center text-gray-800">
+                        Vehicle Information
+                        <InfoTooltip text="Core details and specifications for this specific vehicle." />
+                    </CardTitle>
                     <CardDescription className="text-gray-500">Core details for this vehicle.</CardDescription>
                 </div>
                 {!isEditing && <Button size="sm" onClick={handleEditClick} className="bg-green-700 text-white hover:bg-green-800"><Pencil className="h-4 w-4 mr-2" /> Edit</Button>}
@@ -244,12 +256,15 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
                 ) : (
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                            <InfoItem label="Make" value={truck.make} /><InfoItem label="Model" value={truck.model} /><InfoItem label="Year" value={truck.year} /><InfoItem label="VIN" value={truck.vin} />
-                            <InfoItem label={`Service Interval (${serviceUnit})`} value={truck.service_interval_km ? `${truck.service_interval_km.toLocaleString()}` : null} />
-                            <InfoItem label={`Next Service Due (${serviceUnit})`} value={truck.next_service_km ? `${truck.next_service_km.toLocaleString()}` : null} />
-                             <InfoItem label={`Service Warning Threshold (${serviceUnit})`} value={truck.service_warning_threshold ? `${truck.service_warning_threshold.toLocaleString()}` : null} />
+                            <InfoItem label="Make" value={truck.make} tooltip="The manufacturer of the vehicle (e.g., Toyota)." />
+                            <InfoItem label="Model" value={truck.model} tooltip="The specific model of the vehicle (e.g., Hilux)." />
+                            <InfoItem label="Year" value={truck.year} tooltip="The manufacturing year of the vehicle." />
+                            <InfoItem label="VIN" value={truck.vin} tooltip="The unique 17-character Vehicle Identification Number." />
+                            <InfoItem label={`Service Interval (${serviceUnit})`} value={truck.service_interval_km ? `${truck.service_interval_km.toLocaleString()}` : null} tooltip="The distance (km) or time (hours) between scheduled maintenance services." />
+                            <InfoItem label={`Next Service Due (${serviceUnit})`} value={truck.next_service_km ? `${truck.next_service_km.toLocaleString()}` : null} tooltip="The odometer reading (km or hours) at which the next service is required." />
+                             <InfoItem label={`Service Warning Threshold (${serviceUnit})`} value={truck.service_warning_threshold ? `${truck.service_warning_threshold.toLocaleString()}` : null} tooltip="The distance/hours before the 'Next Service Due' point at which a warning should be triggered." />
                         </div>
-                        <div className="pt-4 border-t"><InfoItem label="Notes" value={truck.notes} /></div>
+                        <div className="pt-4 border-t"><InfoItem label="Notes" value={truck.notes} tooltip="General notes or comments about this specific vehicle." /></div>
                     </div>
                 )}
             </CardContent>
@@ -257,8 +272,25 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
     );
 }
 
-const InfoItem = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
-    <div><p className="text-gray-500">{label}</p><p className={`font-semibold whitespace-pre-wrap ${!value ? 'text-red-500' : 'text-gray-800'}`}>{!value ? '!! Not Set' : value}</p></div>
+function InfoTooltip({ text }: { text: string }) {
+  return (
+    <div className="relative flex items-center group ml-2">
+      <Info size={16} className="text-gray-400 cursor-pointer" />
+      <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2 text-xs text-white bg-green-700 rounded-md opacity-0 group-hover:opacity-100 transition-opacity z-50 pointer-events-none">
+        {text}
+      </div>
+    </div>
+  );
+}
+
+const InfoItem = ({ label, value, tooltip }: { label: string; value: string | number | null | undefined; tooltip?: string }) => (
+    <div>
+        <div className="text-gray-500 flex items-center">
+            {label}
+            {tooltip && <InfoTooltip text={tooltip} />}
+        </div>
+        <p className={`font-semibold whitespace-pre-wrap ${!value ? 'text-red-500' : 'text-gray-800'}`}>{!value ? '!! Not Set' : value}</p>
+    </div>
 );
 
 function ServiceSummaryCard({ truck }: { truck: TruckWithDrivers }) {
@@ -277,7 +309,13 @@ function ServiceSummaryCard({ truck }: { truck: TruckWithDrivers }) {
 
     return (
         <Card className="lg:col-span-3 bg-white">
-            <CardHeader><CardTitle className="flex items-center gap-2 text-gray-800"><Wrench /> Service Status</CardTitle><CardDescription className="text-gray-500">A summary of the vehicle&apos;s maintenance schedule.</CardDescription></CardHeader>
+            <CardHeader>
+                <CardTitle className="flex items-center text-gray-800">
+                    <Wrench className="mr-2" /> Service Status
+                    <InfoTooltip text="A summary of the vehicle's maintenance status and a link to its full service history." />
+                </CardTitle>
+                <CardDescription className="text-gray-500">A summary of the vehicle&apos;s maintenance schedule.</CardDescription>
+            </CardHeader>
             <CardContent>
                 <div className="flex items-center justify-between">
                     <div>{renderServiceStatus()}</div>
@@ -371,7 +409,10 @@ function DriverCard({ type, truck, onTruckUpdate }: { type: 'active' | 'primary'
     return (
         <Card className="lg:col-span-1 bg-white">
             <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle className="flex items-center gap-2 text-gray-800"><User /> {title}</CardTitle>
+                <CardTitle className="flex items-center text-gray-800">
+                    <User className="mr-2"/> {title}
+                    <InfoTooltip text={isPrimary ? 'The main driver permanently assigned to this vehicle. This changes less often.' : 'The driver who is currently operating the vehicle. This can change frequently.'} />
+                </CardTitle>
                 <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
                     <DialogTrigger asChild><Button size="sm" onClick={handleOpenModal} className="bg-green-700 text-white hover:bg-green-800">{driverProfile ? 'Change' : 'Assign'}</Button></DialogTrigger>
                     <DialogContent className="bg-green-100 text-green-900">

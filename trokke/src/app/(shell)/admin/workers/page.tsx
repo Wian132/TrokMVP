@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { type Database } from '@/types/supabase';
-import { UserPlusIcon, PencilIcon, TrashIcon, TruckIcon } from '@heroicons/react/24/outline';
+import { UserPlusIcon, PencilIcon, TrashIcon, TruckIcon, KeyIcon } from '@heroicons/react/24/outline';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // --- Type Definitions ---
@@ -34,6 +34,7 @@ export default function WorkersPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [isResetPasswordModalOpen, setIsResetPasswordModalOpen] = useState(false);
 
   // State for form data
   const [newWorker, setNewWorker] = useState({
@@ -46,7 +47,9 @@ export default function WorkersPage() {
   const [editingWorker, setEditingWorker] = useState<WorkerWithDetails | null>(null);
   const [deletingWorker, setDeletingWorker] = useState<WorkerWithDetails | null>(null);
   const [assigningWorker, setAssigningWorker] = useState<WorkerWithDetails | null>(null);
+  const [resettingPasswordWorker, setResettingPasswordWorker] = useState<WorkerWithDetails | null>(null);
   const [selectedTruckId, setSelectedTruckId] = useState<string>('');
+  const [newPassword, setNewPassword] = useState('');
 
   const fetchWorkers = useCallback(async () => {
     setLoading(true);
@@ -188,6 +191,31 @@ export default function WorkersPage() {
     }
   };
 
+  const handleResetPassword = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    if (!resettingPasswordWorker || !newPassword) {
+      setError("Please enter a new password.");
+      return;
+    }
+
+    const response = await fetch('/admin/reset-password', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: resettingPasswordWorker.profile?.id,
+        newPassword,
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      setError(result.error || 'An unknown error occurred.');
+    } else {
+      closeResetPasswordModal();
+    }
+  };
+
   // --- Modal Control Functions ---
   const openCreateModal = () => {
     setNewWorker({ fullName: "", email: "", password: "", contactPhone: "", role: "Worker" });
@@ -215,6 +243,14 @@ export default function WorkersPage() {
     setIsAssignModalOpen(true);
   };
   const closeAssignModal = () => setIsAssignModalOpen(false);
+
+  const openResetPasswordModal = (worker: WorkerWithDetails) => {
+    setResettingPasswordWorker(worker);
+    setNewPassword('');
+    setIsResetPasswordModalOpen(true);
+  };
+  const closeResetPasswordModal = () => setIsResetPasswordModalOpen(false);
+
 
   if (loading) {
     return <div className="p-6 font-bold text-center">Loading workers...</div>;
@@ -256,6 +292,13 @@ export default function WorkersPage() {
                       {!activeTrucks && !primaryTrucks && <span className="text-gray-400">Unassigned</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-right space-x-2">
+                        <button
+                          onClick={() => openResetPasswordModal(worker)}
+                          className="p-2 rounded-full text-yellow-600 hover:text-yellow-900 hover:bg-yellow-100"
+                          title="Reset Password"
+                        >
+                            <KeyIcon className="h-5 w-5" />
+                        </button>
                         <button
                           onClick={() => openAssignModal(worker)}
                           className="p-2 rounded-full text-green-600 hover:text-green-900 hover:bg-green-100"
@@ -372,6 +415,28 @@ export default function WorkersPage() {
             </div>
         </div>
       )}
+
+        {isResetPasswordModalOpen && resettingPasswordWorker && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white p-8 rounded-lg shadow-2xl w-full max-w-md">
+                    <h2 className="text-xl font-bold mb-4 text-gray-900">Reset Password for {resettingPasswordWorker.profile?.full_name}</h2>
+                    <form onSubmit={handleResetPassword} className="space-y-4">
+                        <input
+                            type="password"
+                            placeholder="Enter new temporary password"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            required
+                            className="w-full p-2 border rounded font-semibold text-gray-900 placeholder-gray-500"
+                        />
+                        <div className="flex justify-end space-x-4">
+                            <button type="button" onClick={closeResetPasswordModal} className="px-4 py-2 bg-gray-300 rounded-md hover:bg-gray-400">Cancel</button>
+                            <button type="submit" className="px-4 py-2 bg-yellow-600 text-white rounded-md hover:bg-yellow-700">Reset Password</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        )}
     </div>
   );
 }

@@ -1,4 +1,3 @@
-// src/app/(shell)/layout.tsx
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
@@ -123,7 +122,7 @@ export default function ShellLayout({
             />
         )}
         
-        <div className="flex-1 flex flex-col relative overflow-hidden">
+        <div className="flex-1 flex flex-col">
           <Navbar setSidebarOpen={setSidebarOpen} pageTitle={pageTitle} />
           <main className="flex-1 overflow-y-auto">
             {children}
@@ -135,4 +134,3 @@ export default function ShellLayout({
     </AuthProvider>
   );
 }
-

@@ -1,4 +1,3 @@
-// src/app/(shell)/admin/manage-roles/page.tsx
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 import UserRolesTable from './UserRolesTable';
@@ -21,7 +20,16 @@ async function getRolesAndUsers() {
   if (!session) redirect('/login');
 
   // Use the ADMIN client for all privileged data fetching
-  const { data: { users }, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
+  const { data, error: usersError } = await supabaseAdmin.auth.admin.listUsers();
+  
+  // FIX: First, check for an error from the listUsers call.
+  if (usersError) {
+    console.error("Fatal error fetching users:", usersError);
+    // Return empty arrays to prevent the page from crashing.
+    return { users: [], roles: [] };
+  }
+  // If there's no error, we can safely access the users list.
+  const users = data.users;
   
   const { data: profiles, error: profilesError } = await supabaseAdmin
     .from('profiles')
@@ -31,8 +39,8 @@ async function getRolesAndUsers() {
     .from('roles')
     .select('*');
 
-  if (usersError || profilesError || rolesError) {
-    console.error("Fatal error fetching data:", usersError || profilesError || rolesError);
+  if (profilesError || rolesError) {
+    console.error("Fatal error fetching profiles or roles:", profilesError || rolesError);
     return { users: [], roles: [] };
   }
   

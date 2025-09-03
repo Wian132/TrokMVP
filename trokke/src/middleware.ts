@@ -54,6 +54,7 @@ export async function middleware(request: NextRequest) {
   // Define access control rules for different routes
   const roleAccessRules: Record<string, string[]> = {
     '/admin': ['SuperAdmin', 'Admin'],
+    '/admin/diesel': ['SuperAdmin', 'Admin'],
     '/floor-manager': ['SuperAdmin', 'Admin', 'FloorManager'],
     '/refueler': ['SuperAdmin', 'Admin', 'FloorManager', 'Refueler'],
     '/checker': ['SuperAdmin', 'Admin', 'FloorManager', 'Checker'],

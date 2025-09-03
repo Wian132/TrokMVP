@@ -21,6 +21,9 @@ type RefuelLogWithDetails = RefuelLog & {
   trucks: { license_plate: string } | null;
   profiles: { full_name: string } | null;
 };
+type ProfileWithRole = {
+    roles: { name: string } | { name: string }[] | null;
+};
 
 // --- Add Diesel Purchase Modal Component ---
 interface AddDieselPurchaseModalProps {
@@ -155,7 +158,7 @@ const SearchableDropdown = ({ items, selectedValue, onSelect, placeholder, disab
 export default function LogRefuelComponent() {
     const supabase = createClient();
     const { user } = useAuth();
-
+    const [userRole, setUserRole] = useState<string | null>(null);
     const [allTrucks, setAllTrucks] = useState<TruckInfo[]>([]);
     const [allWorkers, setAllWorkers] = useState<WorkerInfo[]>([]);
     const [dieselPurchases, setDieselPurchases] = useState<DieselPurchase[]>([]);
@@ -200,6 +203,14 @@ export default function LogRefuelComponent() {
         if (!user) return;
         setLoading(true);
         try {
+            const { data: profileData, error: profileError } = await supabase.from('profiles').select('roles(name)').eq('id', user.id).single();
+            if (profileError) throw new Error("Could not fetch user profile.");
+            
+            const typedProfile = profileData as ProfileWithRole;
+            const roleRelation = typedProfile.roles;
+            const roleName = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
+            setUserRole(roleName || null);
+
             const trucksPromise = supabase.from('trucks').select('id, license_plate, make, model, active_driver_id, current_odo').order('license_plate');
             const workersPromise = supabase.from('workers').select('id, profiles(full_name)').order('id');
             const [trucksResult, workersResult] = await Promise.all([trucksPromise, workersPromise]);
@@ -275,7 +286,8 @@ export default function LogRefuelComponent() {
         setIsAddPurchaseModalOpen(false);
         setStatusMessage("New diesel batch added and selected.");
     };
-
+    
+    const isAdmin = userRole === 'SuperAdmin' || userRole === 'Admin';
     const truckItemsForDropdown = useMemo(() => allTrucks.map(t => ({ id: t.id, label: `${t.license_plate} (${t.make} ${t.model})` })), [allTrucks]);
     const workerItemsForDropdown = useMemo(() => allWorkers.map(w => ({ id: w.id, label: w.fullName || `Worker #${w.id}` })), [allWorkers]);
     const dieselBatchItemsForDropdown = useMemo(() => dieselPurchases.map(p => ({ id: p.id, label: `${new Date(p.purchase_date).toLocaleDateString()} - R${p.price_per_liter}/L (${p.liters}L)` })), [dieselPurchases]);
@@ -291,9 +303,11 @@ export default function LogRefuelComponent() {
                         <BeakerIcon className="h-10 w-10 text-indigo-600" />
                         <div><h1 className="text-xl font-bold text-gray-800">{isEditing ? "Edit Today's Log" : "Log New Refuel"}</h1></div>
                     </div>
-                    <Button type="button" onClick={() => setIsAddPurchaseModalOpen(true)} className="bg-green-600 hover:bg-green-700">
-                        <PlusCircleIcon className="mr-2 h-4 w-4" /> Add New Batch
-                    </Button>
+                    {isAdmin && (
+                        <Button type="button" onClick={() => setIsAddPurchaseModalOpen(true)} className="bg-green-600 hover:bg-green-700">
+                            <PlusCircleIcon className="mr-2 h-4 w-4" /> Add New Batch
+                        </Button>
+                    )}
                 </div>
 
                 {statusMessage && <p className="mb-4 text-center text-sm text-green-600 bg-green-50 p-3 rounded-md">{statusMessage}</p>}

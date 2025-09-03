@@ -61,6 +61,7 @@ type TruckDetails = {
   is_hours_based: boolean;
   missing_fields: string[] | null;
   next_service_km: number | null;
+  service_warning_threshold: number | null;
   has_pre_trip_issues: boolean;
 };
 
@@ -83,6 +84,7 @@ export default function TrucksPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [isAddModalOpen, setIsAddModalOpen] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isImportServicesModalOpen, setIsImportServicesModalOpen] = useState(false);
   const [notification, setNotification] = useState<{ title: string; message: string } | null>(null);
   const [refreshKey, setRefreshKey] = useState(0)
   const [truckToDelete, setTruckToDelete] = useState<TruckDetails | null>(null);
@@ -156,6 +158,12 @@ export default function TrucksPage() {
     setNotification({ title: 'Success', message: 'Trip data has been imported.' });
   }, [triggerRefresh]);
 
+    const handleImportServices = useCallback(() => {
+    triggerRefresh();
+    setNotification({ title: 'Success', message: 'Service data has been imported.' });
+  }, [triggerRefresh]);
+
+
   const handleDeleteTruck = useCallback(async (truckId: number) => {
     const { error } = await supabase.from('trucks').delete().match({ id: truckId })
     if (error) {
@@ -200,7 +208,7 @@ export default function TrucksPage() {
   const isServiceDueSoon = (truck: TruckDetails) => {
     if (truck.next_service_km && truck.latest_odometer) {
         const diff = truck.next_service_km - truck.latest_odometer;
-        const threshold = truck.is_hours_based ? 200 : 1000;
+        const threshold = truck.service_warning_threshold || (truck.is_hours_based ? 50 : 1500);
         return diff <= threshold;
     }
     return false;
@@ -232,6 +240,14 @@ export default function TrucksPage() {
         <div className="flex justify-between items-center">
             <h2 className="text-3xl font-bold tracking-tight">Fleet Management</h2>
             <div className="flex items-center gap-2">
+                 <Dialog open={isImportServicesModalOpen} onOpenChange={setIsImportServicesModalOpen}>
+                    <DialogTrigger asChild>
+                        <Button variant="outline" className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700">
+                            <ArrowUpTrayIcon className="mr-2 h-4 w-4" /> Import Services
+                        </Button>
+                    </DialogTrigger>
+                    <ImportServicesModal onServicesImported={handleImportServices} closeModal={() => setIsImportServicesModalOpen(false)} setNotification={setNotification} />
+                </Dialog>
                 <Dialog open={isImportModalOpen} onOpenChange={setIsImportModalOpen}>
                     <DialogTrigger asChild>
                         <Button variant="outline" className="border-indigo-600 text-indigo-600 hover:bg-indigo-50 hover:text-indigo-700">
@@ -370,6 +386,78 @@ function ImportTripsModal({ onTripsImported, closeModal, setNotification }: { on
     );
 }
 
+function ImportServicesModal({ onServicesImported, closeModal, setNotification }: { onServicesImported: () => void, closeModal: () => void, setNotification: (notif: { title: string; message: string }) => void }) {
+    const [isImporting, setIsImporting] = useState(false);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        if (!fileInputRef.current?.files?.length) {
+            setNotification({ title: 'No File', message: 'Please select a file to import.' });
+            return;
+        }
+        
+        setIsImporting(true);
+        const formData = new FormData();
+        formData.append('file', fileInputRef.current.files[0]);
+
+        try {
+            const response = await fetch('/api/import-services', {
+                method: 'POST',
+                body: formData,
+            });
+            const result = await response.json();
+            
+            setIsImporting(false);
+            setNotification({ 
+                title: result.success ? 'Import Successful' : 'Import Failed', 
+                message: result.message 
+            });
+
+            if (result.success) {
+                onServicesImported();
+                closeModal();
+            }
+        } catch (error) {
+            setIsImporting(false);
+            console.error("Import failed:", error);
+            setNotification({ title: 'Error', message: 'An unexpected error occurred during import.' });
+        }
+    };
+
+    return (
+        <DialogContent>
+            <DialogHeader>
+                <DialogTitle>Import Service Data</DialogTitle>
+                <DialogDescription>
+                    Upload an Excel file to import service histories for your vehicles. This will add new service records without creating new vehicles.
+                </DialogDescription>
+            </DialogHeader>
+            <form onSubmit={handleFormSubmit} className="space-y-4">
+                <div>
+                    <Label htmlFor="service-file">Excel File</Label>
+                    <Input id="service-file" name="file" type="file" accept=".xlsx, .xls" ref={fileInputRef} required />
+                </div>
+                <DialogFooter>
+                    <Button type="button" variant="ghost" onClick={closeModal}>Cancel</Button>
+                    <Button type="submit" className="bg-indigo-600 hover:bg-indigo-700" disabled={isImporting}>
+                        {isImporting ? (
+                            <>
+                                <ArrowPathIcon className="animate-spin h-4 w-4 mr-2" />
+                                Importing...
+                            </>
+                        ) : (
+                            <>
+                                <ArrowUpTrayIcon className="mr-2 h-4 w-4" />
+                                Start Import
+                            </>
+                        )}
+                    </Button>
+                </DialogFooter>
+            </form>
+        </DialogContent>
+    );
+}
 
 // --- Analytics Card Component ---
 function AnalyticsCard({ onRecalculate, setNotification }: { onRecalculate: () => void, setNotification: (notif: { title: string; message: string }) => void }) {
@@ -668,16 +756,24 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
         "text-black",
         is_hours_based ? "bg-yellow-100" : "bg-green-100"
     );
+
+    const isServiceWarningActive = useMemo(() => {
+        if (truck.next_service_km && truck.latest_odometer) {
+            const diff = truck.next_service_km - truck.latest_odometer;
+            const threshold = truck.service_warning_threshold || (truck.is_hours_based ? 50 : 1500);
+            return diff > 0 && diff <= threshold;
+        }
+        return false;
+    }, [truck]);
     
     const renderServiceDue = () => {
         if (truck.next_service_km && truck.latest_odometer) {
             const kmUntilService = truck.next_service_km - truck.latest_odometer;
-            const threshold = truck.is_hours_based ? 200 : 1000;
             
             if (kmUntilService <= 0) {
                 return <span className="font-semibold text-red-600">{kmUntilService.toLocaleString()}{odoUnit}</span>;
             }
-            if (kmUntilService <= threshold) {
+            if (isServiceWarningActive) {
                 return <span className="font-semibold text-orange-500">{kmUntilService.toLocaleString()}{odoUnit}</span>;
             }
             return <span className="font-semibold text-gray-900">{kmUntilService.toLocaleString()}{odoUnit}</span>;
@@ -715,11 +811,14 @@ function TruckCard({ truck, onDelete, onUpdateCategory }: { truck: TruckDetails,
                         <span className="text-gray-600">Driver</span>
                         <span className="font-semibold text-gray-900">{truck.worker_name || 'Unassigned'}</span>
                     </div>
-                    {(truck.has_pre_trip_issues || (truck.category === 'needs attention' && truck.missing_fields && truck.missing_fields.length > 0)) && (
+                    {(truck.has_pre_trip_issues || (truck.category === 'needs attention' && truck.missing_fields && truck.missing_fields.length > 0) || isServiceWarningActive) && (
                         <div className="mt-3 pt-3 border-t border-dashed border-red-300">
                             <div className="flex items-start text-red-600">
                                 <AlertTriangle className="h-4 w-4 mr-2 mt-0.5 flex-shrink-0" />
                                 <div>
+                                    {isServiceWarningActive && (
+                                        <p className="text-xs font-bold">Vehicle requires service soon</p>
+                                    )}
                                     {truck.has_pre_trip_issues && (
                                         <p className="text-xs font-bold">Pre-trip check indicates issues</p>
                                     )}

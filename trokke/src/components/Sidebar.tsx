@@ -5,13 +5,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/components/AuthContext";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { 
   XMarkIcon, 
   ArrowRightOnRectangleIcon,
   ChartPieIcon,
   UserGroupIcon,
   UsersIcon,
-  TruckIcon,
   BuildingStorefrontIcon,
   MapPinIcon,
   LinkIcon as LinkIconSolid,
@@ -19,9 +19,11 @@ import {
   TableCellsIcon,
   ArchiveBoxIcon,
   ChartBarIcon,
-  PencilSquareIcon,
-  BeakerIcon, // Using as Fuel Icon
-  ShieldCheckIcon // For Manage Roles
+  BeakerIcon,
+  ShieldCheckIcon,
+  ClipboardDocumentListIcon,
+  ChevronDownIcon,
+  UserCircleIcon,
 } from '@heroicons/react/24/solid';
 
 interface NavLink {
@@ -31,22 +33,35 @@ interface NavLink {
 }
 
 interface SidebarProps {
-  userRole: string; // Can be any of the new roles
+  userRole: string;
   isSidebarOpen: boolean;
   setSidebarOpen: (isOpen: boolean) => void;
 }
 
 // --- Link Definitions ---
-const adminCoreLinks: NavLink[] = [
+const accountLink: NavLink = { href: "/account", label: "My Account", icon: UserCircleIcon };
+
+const adminActiveLinks: NavLink[] = [
   { href: "/admin/trucks", label: "Fleet Overview", icon: ChartPieIcon },
+  { href: "/admin/diesel", label: "Diesel Tank", icon: BeakerIcon },
+  { href: "/admin/manage-roles", label: "Manage Roles", icon: ShieldCheckIcon },
+  { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
+];
+
+const adminAnalyticsLinks: NavLink[] = [
   { href: "/admin/fleet-analytics", label: "Fleet Analytics", icon: TableCellsIcon },
   { href: "/admin/worker-analytics", label: "Worker Analytics", icon: ChartBarIcon },
-  { href: "/admin/services", label: "Service Records", icon: WrenchScrewdriverIcon },
-  { href: "/admin/workers", label: "Workers", icon: UsersIcon },
-  { href: "/admin/trips", label: "Trips", icon: MapPinIcon },
-  { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
-  { href: "/admin/manage-roles", label: "Manage Roles", icon: ShieldCheckIcon },
-  { href: "/admin/diesel", label: "Diesel", icon: BeakerIcon },
+];
+
+const adminListsLinks: NavLink[] = [
+    { href: "/admin/services", label: "Service Records", icon: WrenchScrewdriverIcon },
+    { href: "/admin/trips", label: "Refuels", icon: MapPinIcon },
+    { href: "/admin/workers", label: "Workers", icon: UsersIcon },
+];
+
+const adminWorkerPagesLinks: NavLink[] = [
+  { href: "/refueler/refuels", label: "Log Refuel", icon: BeakerIcon },
+  { href: "/checker/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
 ];
 
 const adminFutureLinks: NavLink[] = [
@@ -57,31 +72,59 @@ const adminFutureLinks: NavLink[] = [
 const clientLinks: NavLink[] = [
   { href: "/client/dashboard", label: "Dashboard", icon: ChartPieIcon },
   { href: "/client/my-shops", label: "My Shops", icon: BuildingStorefrontIcon },
+  accountLink,
 ];
 
 const workerLinks: NavLink[] = [
   { href: "/worker/dashboard", label: "Dashboard", icon: ChartPieIcon },
-  { href: "/worker/my-truck", label: "My Truck", icon: TruckIcon },
-  { href: "/worker/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
-  { href: "/worker/log-trip", label: "Log Trip", icon: PencilSquareIcon },
+  accountLink,
 ];
 
 const refuelerLinks: NavLink[] = [
   { href: "/refueler/dashboard", label: "Dashboard", icon: ChartPieIcon },
   { href: "/refueler/refuels", label: "Log Refuel", icon: BeakerIcon },
+  accountLink,
 ];
 
-// New links for Checker and FloorManager
 const checkerLinks: NavLink[] = [
     { href: "/checker/dashboard", label: "Dashboard", icon: ChartPieIcon },
     { href: "/checker/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
+    accountLink,
 ];
 
 const floorManagerLinks: NavLink[] = [
     { href: "/floor-manager/dashboard", label: "Dashboard", icon: ChartPieIcon },
     { href: "/floor-manager/refuels", label: "Log Refuel", icon: BeakerIcon },
     { href: "/floor-manager/pre-trip-check", label: "Pre-Trip Check", icon: WrenchScrewdriverIcon },
+    accountLink,
 ];
+
+interface CollapsibleSidebarSectionProps {
+  title: string;
+  icon: React.ElementType;
+  links: NavLink[];
+  renderLink: (link: NavLink) => React.ReactNode;
+  defaultOpen?: boolean;
+}
+
+const CollapsibleSidebarSection = ({ title, icon: Icon, links, renderLink, defaultOpen = false }: CollapsibleSidebarSectionProps) => (
+    <Collapsible defaultOpen={defaultOpen}>
+        <CollapsibleTrigger className="w-full group">
+            <h3 className="flex w-full items-center justify-between rounded-md bg-green-800 p-2 text-sm font-bold uppercase tracking-wider text-white">
+                <div className="flex items-center">
+                    <Icon className="h-4 w-4 mr-2" />
+                    {title}
+                </div>
+                <ChevronDownIcon className="h-5 w-5 transition-transform duration-300 group-data-[state=open]:rotate-180" />
+            </h3>
+        </CollapsibleTrigger>
+        <CollapsibleContent className="py-2">
+            <div className="space-y-1">
+                {links.map(renderLink)}
+            </div>
+        </CollapsibleContent>
+    </Collapsible>
+);
 
 
 export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: SidebarProps) {
@@ -89,25 +132,27 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
   const { user, signOut } = useAuth();
   const userInitial = user?.email?.charAt(0).toUpperCase() || '?';
 
-  let coreLinks: NavLink[] = [];
-  let futureLinks: NavLink[] = [];
-
-  // Updated role handling
-  if (userRole === "SuperAdmin" || userRole === "Admin") {
-    coreLinks = adminCoreLinks;
-    futureLinks = adminFutureLinks;
-  } else if (userRole === "Client") {
-    coreLinks = clientLinks;
-  } else if (userRole === "Worker") {
-    coreLinks = workerLinks;
-  } else if (userRole === "Refueler") {
-    coreLinks = refuelerLinks;
-  } else if (userRole === "Checker") {
-    coreLinks = checkerLinks;
-  } else if (userRole === "FloorManager") {
-    coreLinks = floorManagerLinks;
-  }
-
+  let links: NavLink[] = [];
+  
+  if (userRole === "client") links = clientLinks;
+  else if (userRole === "worker") links = workerLinks;
+  else if (userRole === "refueler") links = refuelerLinks;
+  else if (userRole === "checker") links = checkerLinks;
+  else if (userRole === "floormanager") links = floorManagerLinks;
+  
+  const renderLink = (link: NavLink) => (
+    <Link
+        key={link.href}
+        href={link.href}
+        onClick={() => setSidebarOpen(false)}
+        className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+        pathname.startsWith(link.href) ? "bg-green-800 text-white" : "text-green-100 hover:bg-green-600 hover:text-white"
+        }`}
+    >
+        <link.icon className="mr-3 flex-shrink-0 h-6 w-6" />
+        {link.label}
+    </Link>
+  );
 
   const sidebarContent = (
     <>
@@ -120,43 +165,25 @@ export default function Sidebar({ userRole, isSidebarOpen, setSidebarOpen }: Sid
                  </button>
             </div>
             
-            <nav className="mt-8 flex-1 px-2 space-y-2">
-                {coreLinks.map((link) => (
-                    <Link
-                        key={link.href}
-                        href={link.href}
-                        onClick={() => setSidebarOpen(false)}
-                        className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                        pathname.startsWith(link.href) ? "bg-green-800 text-white" : "text-green-100 hover:bg-green-600 hover:text-white"
-                        }`}
-                    >
-                        <link.icon className="mr-3 flex-shrink-0 h-6 w-6" />
-                        {link.label}
-                    </Link>
-                ))}
-            </nav>
+            <div className="mt-8 flex-1 px-2 space-y-4">
+                {userRole === "SuperAdmin" || userRole === "admin" ? (
+                    <>
+                        <CollapsibleSidebarSection title="Active" icon={ClipboardDocumentListIcon} links={adminActiveLinks} renderLink={renderLink} defaultOpen />
+                        <CollapsibleSidebarSection title="Analytics" icon={ChartBarIcon} links={adminAnalyticsLinks} renderLink={renderLink} defaultOpen />
+                        <CollapsibleSidebarSection title="Lists" icon={UsersIcon} links={adminListsLinks} renderLink={renderLink} />
+                        <CollapsibleSidebarSection title="Worker Pages" icon={UsersIcon} links={adminWorkerPagesLinks} renderLink={renderLink} />
+                        <CollapsibleSidebarSection title="Account" icon={UserCircleIcon} links={[accountLink]} renderLink={renderLink} />
+                    </>
+                ) : (
+                    <nav className="space-y-1">
+                        {links.map(renderLink)}
+                    </nav>
+                )}
+            </div>
 
-            {futureLinks.length > 0 && (
-                <div className="px-2 mt-6">
-                    <h3 className="px-2 text-xs font-semibold text-green-200 uppercase tracking-wider flex items-center">
-                        <ArchiveBoxIcon className="h-4 w-4 mr-2" />
-                        Future Features
-                    </h3>
-                    <div className="mt-2 space-y-2">
-                        {futureLinks.map((link) => (
-                             <Link
-                                 key={link.href}
-                                 href={link.href}
-                                 onClick={() => setSidebarOpen(false)}
-                                 className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-                                 pathname.startsWith(link.href) ? "bg-green-800 text-white" : "text-green-100 hover:bg-green-600 hover:text-white"
-                                 }`}
-                             >
-                                 <link.icon className="mr-3 flex-shrink-0 h-6 w-6" />
-                                 {link.label}
-                             </Link>
-                        ))}
-                    </div>
+            { (userRole === "SuperAdmin" || userRole === "admin") && adminFutureLinks.length > 0 && (
+                <div className="px-2 mt-auto">
+                    <CollapsibleSidebarSection title="Future Features" icon={ArchiveBoxIcon} links={adminFutureLinks} renderLink={renderLink} />
                 </div>
             )}
         </div>
