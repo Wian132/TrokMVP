@@ -7,6 +7,11 @@ export type Json =
   | Json[]
 
 export type Database = {
+  // Allows to automatically instantiate createClient with right options
+  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
+  __InternalSupabase: {
+    PostgrestVersion: "13.0.4"
+  }
   public: {
     Tables: {
       business_stores: {
@@ -138,65 +143,74 @@ export type Database = {
       }
       pre_trip_checks: {
         Row: {
+          battery_secure_and_clean: boolean
+          brake_fluid_level_ok: boolean
           brakes_ok: boolean
-          center_mirror_ok: boolean
           checked_at: string
-          driver_mirror_ok: boolean
-          driver_window_ok: boolean
+          coolant_level_ok: boolean
           fridge_ok: boolean
           hooter_ok: boolean
           id: number
           issues_resolved: boolean
           lights_ok: boolean
+          mirrors_ok: boolean
           oil_level_ok: boolean
           other_issues: string | null
-          passenger_mirror_ok: boolean
-          passenger_window_ok: boolean
-          tires_ok: Json | null
+          tires_ok: boolean
           truck_id: number
-          water_level_ok: boolean
+          tyre_pressure_correct: boolean
+          tyre_pressure_images: string[] | null
+          tyre_surface_condition: string | null
+          tyre_surface_images: string[] | null
+          windows_ok: boolean
           windshield_ok: boolean
           worker_id: number
         }
         Insert: {
+          battery_secure_and_clean?: boolean
+          brake_fluid_level_ok?: boolean
           brakes_ok?: boolean
-          center_mirror_ok?: boolean
           checked_at?: string
-          driver_mirror_ok?: boolean
-          driver_window_ok?: boolean
+          coolant_level_ok?: boolean
           fridge_ok?: boolean
           hooter_ok?: boolean
           id?: never
           issues_resolved?: boolean
           lights_ok?: boolean
+          mirrors_ok?: boolean
           oil_level_ok?: boolean
           other_issues?: string | null
-          passenger_mirror_ok?: boolean
-          passenger_window_ok?: boolean
-          tires_ok?: Json | null
+          tires_ok?: boolean
           truck_id: number
-          water_level_ok?: boolean
+          tyre_pressure_correct?: boolean
+          tyre_pressure_images?: string[] | null
+          tyre_surface_condition?: string | null
+          tyre_surface_images?: string[] | null
+          windows_ok?: boolean
           windshield_ok?: boolean
           worker_id: number
         }
         Update: {
+          battery_secure_and_clean?: boolean
+          brake_fluid_level_ok?: boolean
           brakes_ok?: boolean
-          center_mirror_ok?: boolean
           checked_at?: string
-          driver_mirror_ok?: boolean
-          driver_window_ok?: boolean
+          coolant_level_ok?: boolean
           fridge_ok?: boolean
           hooter_ok?: boolean
           id?: never
           issues_resolved?: boolean
           lights_ok?: boolean
+          mirrors_ok?: boolean
           oil_level_ok?: boolean
           other_issues?: string | null
-          passenger_mirror_ok?: boolean
-          passenger_window_ok?: boolean
-          tires_ok?: Json | null
+          tires_ok?: boolean
           truck_id?: number
-          water_level_ok?: boolean
+          tyre_pressure_correct?: boolean
+          tyre_pressure_images?: string[] | null
+          tyre_surface_condition?: string | null
+          tyre_surface_images?: string[] | null
+          windows_ok?: boolean
           windshield_ok?: boolean
           worker_id?: number
         }
@@ -205,15 +219,15 @@ export type Database = {
             foreignKeyName: "pre_trip_checks_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "pre_trip_checks_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "pre_trip_checks_worker_id_fkey"
@@ -260,6 +274,7 @@ export type Database = {
           notes: string | null
           odo_reading: number
           refuel_date: string
+          refueler_profile_id: string | null
           tank_id: number | null
           truck_id: number
           worker_id: number
@@ -270,6 +285,7 @@ export type Database = {
           notes?: string | null
           odo_reading: number
           refuel_date?: string
+          refueler_profile_id?: string | null
           tank_id?: number | null
           truck_id: number
           worker_id: number
@@ -280,11 +296,19 @@ export type Database = {
           notes?: string | null
           odo_reading?: number
           refuel_date?: string
+          refueler_profile_id?: string | null
           tank_id?: number | null
           truck_id?: number
           worker_id?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "refueler_logs_refueler_profile_id_fkey"
+            columns: ["refueler_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "refueler_logs_tank_id_fkey"
             columns: ["tank_id"]
@@ -296,15 +320,15 @@ export type Database = {
             foreignKeyName: "refueler_logs_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "refueler_logs_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "refueler_logs_worker_id_fkey"
@@ -417,15 +441,15 @@ export type Database = {
             foreignKeyName: "services_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "services_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -453,15 +477,15 @@ export type Database = {
             foreignKeyName: "truck_locations_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "truck_locations_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -528,15 +552,15 @@ export type Database = {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
           },
           {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
             isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "truck_trips_worker_id_fkey"
@@ -563,6 +587,7 @@ export type Database = {
           notes: string | null
           primary_driver_id: number | null
           service_interval_km: number | null
+          service_warning_threshold: number | null
           status: Database["public"]["Enums"]["truck_status"]
           type: string | null
           vin: string | null
@@ -583,6 +608,7 @@ export type Database = {
           notes?: string | null
           primary_driver_id?: number | null
           service_interval_km?: number | null
+          service_warning_threshold?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
           vin?: string | null
@@ -603,6 +629,7 @@ export type Database = {
           notes?: string | null
           primary_driver_id?: number | null
           service_interval_km?: number | null
+          service_warning_threshold?: number | null
           status?: Database["public"]["Enums"]["truck_status"]
           type?: string | null
           vin?: string | null
@@ -610,7 +637,7 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "trucks_active_driver_id_fkey"
+            foreignKeyName: "trucks_assigned_worker_id_fkey"
             columns: ["active_driver_id"]
             isOneToOne: false
             referencedRelation: "workers"
@@ -671,7 +698,7 @@ export type Database = {
           {
             foreignKeyName: "workers_profile_id_fkey"
             columns: ["profile_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -695,28 +722,23 @@ export type Database = {
     }
     Functions: {
       calculate_kml_for_period: {
-        Args: {
-          start_date: string
-          end_date: string
-        }
+        Args: { end_date: string; start_date: string }
         Returns: {
-          truck_id: number
-          latest_reading: number
+          avg_kml: number
           first_odo: number
-          last_odo: number
           first_odo_date: string
+          last_odo: number
           last_odo_date: string
+          latest_reading: number
+          liters_rows_included: number
+          odo_rows_included: number
           total_km: number
           total_liters: number
-          avg_kml: number
-          odo_rows_included: number
-          liters_rows_included: number
+          truck_id: number
         }[]
       }
       delete_user: {
-        Args: {
-          user_id: string
-        }
+        Args: { user_id: string }
         Returns: undefined
       }
       get_all_map_markers: {
@@ -726,49 +748,43 @@ export type Database = {
       get_all_truck_trip_counts: {
         Args: Record<PropertyKey, never>
         Returns: {
-          truck_id: number
           total_trips: number
+          truck_id: number
         }[]
       }
       get_all_worker_analytics: {
-        Args: {
-          start_date?: string
-          end_date?: string
-        }
+        Args: { end_date?: string; start_date?: string }
         Returns: {
-          worker_id: number
-          worker_name: string
-          total_trips: number
           total_km: number
           total_liters: number
           total_preday_checks: number
+          total_trips: number
+          worker_id: number
+          worker_name: string
         }[]
       }
       get_client_truck_and_store_locations: {
-        Args: {
-          client_profile_id: string
-        }
+        Args: { client_profile_id: string }
         Returns: Json
       }
       get_fleet_analytics: {
-        Args: {
-          start_date: string
-          end_date: string
-        }
+        Args:
+          | Record<PropertyKey, never>
+          | { end_date: string; start_date: string }
         Returns: {
-          truck_id: number
-          license_plate: string
-          make: string
-          model: string
           assigned_worker_name: string
-          total_km: number
-          total_liters: number
-          total_fuel_cost: number
-          total_service_cost: number
           avg_kml: number
           cost_per_km: number
           current_odo: number
+          license_plate: string
+          make: string
+          model: string
           next_service_km: number
+          total_fuel_cost: number
+          total_km: number
+          total_liters: number
+          total_service_cost: number
+          truck_id: number
         }[]
       }
       get_my_role: {
@@ -778,22 +794,22 @@ export type Database = {
       get_truck_details_with_analytics: {
         Args: Record<PropertyKey, never>
         Returns: {
+          category: string
+          has_pre_trip_issues: boolean
           id: number
+          is_hours_based: boolean
+          latest_km_per_liter: number
+          latest_odometer: number
           license_plate: string
           make: string
-          model: string
-          year: number
-          category: string
-          status: string
-          notes: string
-          worker_name: string
-          latest_odometer: number
-          latest_km_per_liter: number
-          total_trips: number
-          is_hours_based: boolean
           missing_fields: string[]
+          model: string
           next_service_km: number
-          has_pre_trip_issues: boolean
+          notes: string
+          status: string
+          total_trips: number
+          worker_name: string
+          year: number
         }[]
       }
       link_unmapped_trips: {
@@ -824,30 +840,31 @@ export type Database = {
 
 type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<
-  keyof Database,
-  "public"
->]
+type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
 
 export type Tables<
-  PublicTableNameOrOptions extends
+  DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-    ? keyof (DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Views"])
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-  ? (DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
+      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R
     : never
-  : PublicTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
+  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
         DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[PublicTableNameOrOptions] extends {
+        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
         Row: infer R
       }
       ? R
@@ -855,20 +872,24 @@ export type Tables<
     : never
 
 export type TablesInsert<
-  PublicTableNameOrOptions extends
+  DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-    ? keyof DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"]
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-  ? DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Insert: infer I
     }
     ? I
     : never
-  : PublicTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Insert: infer I
       }
       ? I
@@ -876,20 +897,24 @@ export type TablesInsert<
     : never
 
 export type TablesUpdate<
-  PublicTableNameOrOptions extends
+  DefaultSchemaTableNameOrOptions extends
     | keyof DefaultSchema["Tables"]
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-    ? keyof DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"]
+  TableName extends DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
     : never = never,
-> = PublicTableNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-  ? DatabaseWithoutInternals[PublicTableNameOrOptions["schema"]]["Tables"][TableName] extends {
+> = DefaultSchemaTableNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
       Update: infer U
     }
     ? U
     : never
-  : PublicTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][PublicTableNameOrOptions] extends {
+  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
+    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
         Update: infer U
       }
       ? U
@@ -897,16 +922,20 @@ export type TablesUpdate<
     : never
 
 export type Enums<
-  PublicEnumNameOrOptions extends
+  DefaultSchemaEnumNameOrOptions extends
     | keyof DefaultSchema["Enums"]
     | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends PublicEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-    ? keyof DatabaseWithoutInternals[PublicEnumNameOrOptions["schema"]]["Enums"]
+  EnumName extends DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals
+  }
+    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
     : never = never,
-> = PublicEnumNameOrOptions extends { schema: keyof DatabaseWithoutInternals }
-  ? DatabaseWithoutInternals[PublicEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : PublicEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][PublicEnumNameOrOptions]
+> = DefaultSchemaEnumNameOrOptions extends {
+  schema: keyof DatabaseWithoutInternals
+}
+  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
+  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
+    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
     : never
 
 export type CompositeTypes<
@@ -942,4 +971,3 @@ export const Constants = {
     },
   },
 } as const
-

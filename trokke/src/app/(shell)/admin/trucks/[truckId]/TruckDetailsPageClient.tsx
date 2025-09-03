@@ -38,20 +38,15 @@ const parseReportedIssues = (check: PreTripCheck | null) => {
     const issues: { description: string; severity: 'High' | 'Medium' }[] = [];
     const addIssue = (description: string, severity: 'High' | 'Medium' = 'Medium') => issues.push({ description, severity });
     if (!check.windshield_ok) addIssue("Windshield damaged");
-    if (!check.driver_window_ok) addIssue("Driver Window issue");
-    if (!check.passenger_window_ok) addIssue("Passenger Window issue");
-    if (!check.driver_mirror_ok) addIssue("Driver Mirror damaged");
-    if (!check.passenger_mirror_ok) addIssue("Passenger Mirror damaged");
-    if (!check.center_mirror_ok) addIssue("Center Mirror damaged");
+    if (!check.windows_ok) addIssue("Windows issue");
+    if (!check.mirrors_ok) addIssue("Mirrors damaged");
     if (!check.lights_ok) addIssue("Lights/Indicators faulty");
     if (!check.brakes_ok) addIssue("Brakes issue reported", "High");
     if (!check.hooter_ok) addIssue("Hooter/Horn not working");
     if (!check.fridge_ok) addIssue("Refrigerator Unit faulty");
     if (!check.oil_level_ok) addIssue("Oil Level low/issue");
-    if (!check.water_level_ok) addIssue("Coolant Level low/issue");
-    const tires = check.tires_ok as { driver_side_ok?: boolean; passenger_side_ok?: boolean } | null;
-    if (!tires?.driver_side_ok) addIssue("Driver Side Tires issue", "High");
-    if (!tires?.passenger_side_ok) addIssue("Passenger Side Tires issue", "High");
+    if (!check.coolant_level_ok) addIssue("Coolant Level low/issue");
+    if (!check.tires_ok) addIssue("Tires issue", "High");
     if (check.other_issues) addIssue(`Driver Comment: ${check.other_issues}`);
     return issues;
 };
@@ -197,13 +192,14 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
             license_plate: truck.license_plate, make: truck.make, model: truck.model, vin: truck.vin,
             year: truck.year, service_interval_km: truck.service_interval_km,
             next_service_km: truck.next_service_km, notes: truck.notes,
+            service_warning_threshold: truck.service_warning_threshold,
         });
         setIsEditing(true);
     };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
-        const isNumeric = ['year', 'service_interval_km', 'next_service_km'].includes(name);
+        const isNumeric = ['year', 'service_interval_km', 'next_service_km', 'service_warning_threshold'].includes(name);
         setFormData(prev => ({ ...prev, [name]: value === '' ? null : (isNumeric ? Number(value) : value) }));
     };
 
@@ -239,6 +235,7 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
                             <div><Label htmlFor="vin">VIN</Label><Input id="vin" name="vin" value={formData.vin || ''} onChange={handleInputChange} className="bg-white text-black border-gray-300" /></div>
                             <div><Label htmlFor="service_interval_km">Service Interval ({serviceUnit})</Label><Input id="service_interval_km" name="service_interval_km" type="number" value={formData.service_interval_km || ''} onChange={handleInputChange} className="bg-white text-black border-gray-300" /></div>
                             <div><Label htmlFor="next_service_km">Next Service ({serviceUnit})</Label><Input id="next_service_km" name="next_service_km" type="number" value={formData.next_service_km || ''} onChange={handleInputChange} className="bg-white text-black border-gray-300" /></div>
+                            <div><Label htmlFor="service_warning_threshold">Service Warning Threshold ({serviceUnit})</Label><Input id="service_warning_threshold" name="service_warning_threshold" type="number" value={formData.service_warning_threshold || ''} onChange={handleInputChange} className="bg-white text-black border-gray-300" /></div>
                         </div>
                         <div><Label htmlFor="notes">Notes</Label><Textarea id="notes" name="notes" value={formData.notes || ''} onChange={handleInputChange} className="bg-white text-black border-gray-300" /></div>
                         {error && <p className="text-sm text-red-500">{error}</p>}
@@ -250,6 +247,7 @@ function TruckDetailsCard({ truck, onTruckUpdate }: { truck: TruckWithDrivers, o
                             <InfoItem label="Make" value={truck.make} /><InfoItem label="Model" value={truck.model} /><InfoItem label="Year" value={truck.year} /><InfoItem label="VIN" value={truck.vin} />
                             <InfoItem label={`Service Interval (${serviceUnit})`} value={truck.service_interval_km ? `${truck.service_interval_km.toLocaleString()}` : null} />
                             <InfoItem label={`Next Service Due (${serviceUnit})`} value={truck.next_service_km ? `${truck.next_service_km.toLocaleString()}` : null} />
+                             <InfoItem label={`Service Warning Threshold (${serviceUnit})`} value={truck.service_warning_threshold ? `${truck.service_warning_threshold.toLocaleString()}` : null} />
                         </div>
                         <div className="pt-4 border-t"><InfoItem label="Notes" value={truck.notes} /></div>
                     </div>

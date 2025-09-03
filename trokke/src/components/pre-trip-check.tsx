@@ -5,50 +5,43 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuth } from '@/components/AuthContext';
 import { type Database } from '@/types/supabase';
-import { TruckIcon, ExclamationTriangleIcon, LightBulbIcon, SunIcon, CogIcon, BeakerIcon, CloudIcon, ViewfinderCircleIcon, SpeakerWaveIcon, StopCircleIcon, FireIcon, BookOpenIcon, PencilIcon, PlusCircleIcon } from '@heroicons/react/24/outline';
+import { TruckIcon, ExclamationTriangleIcon, LightBulbIcon, SunIcon, CogIcon, BeakerIcon, CloudIcon, ViewfinderCircleIcon, SpeakerWaveIcon, StopCircleIcon, FireIcon, BookOpenIcon, PencilIcon, PlusCircleIcon, Battery0Icon } from '@heroicons/react/24/outline';
 import { ChevronUpDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Button } from '@/components/ui/button';
 
 
 // --- Type Definitions ---
 type TruckInfo = { id: number; license_plate: string; make: string | null; model: string | null; };
 type WorkerInfo = { id: number; };
 type PreTripCheck = Database['public']['Tables']['pre_trip_checks']['Row'];
-type TireState = {
-  driver_side_ok: boolean;
-  passenger_side_ok: boolean;
-};
-type CheckState = {
-  windshield_ok: boolean;
-  driver_window_ok: boolean;
-  passenger_window_ok: boolean;
-  driver_mirror_ok: boolean;
-  passenger_mirror_ok: boolean;
-  center_mirror_ok: boolean;
-  lights_ok: boolean;
-  oil_level_ok: boolean;
-  water_level_ok: boolean;
-  hooter_ok: boolean;
-  brakes_ok: boolean;
-  fridge_ok: boolean;
-  tires_ok: TireState;
-  other_issues: string;
-};
+type CheckState = Omit<PreTripCheck, 'id' | 'checked_at' | 'truck_id' | 'worker_id'>;
+
 type ProfileWithRole = {
     roles: { name: string } | { name: string }[] | null;
 };
 
 
 // --- Default State ---
-const defaultTireState: TireState = {
-  driver_side_ok: true,
-  passenger_side_ok: true,
-};
 const defaultCheckState: CheckState = {
-  windshield_ok: true, driver_window_ok: true, passenger_window_ok: true,
-  driver_mirror_ok: true, passenger_mirror_ok: true, center_mirror_ok: true,
-  lights_ok: true, oil_level_ok: true, water_level_ok: true,
-  hooter_ok: true, brakes_ok: true, fridge_ok: true,
-  tires_ok: defaultTireState, other_issues: '',
+  windshield_ok: true,
+  windows_ok: true,
+  mirrors_ok: true,
+  lights_ok: true,
+  oil_level_ok: true,
+  coolant_level_ok: true,
+  hooter_ok: true,
+  brakes_ok: true,
+  fridge_ok: true,
+  tires_ok: true,
+  other_issues: '',
+  tyre_pressure_correct: true,
+  tyre_surface_condition: 'Good',
+  battery_secure_and_clean: true,
+  brake_fluid_level_ok: true,
+  tyre_pressure_images: [],
+  tyre_surface_images: [],
+  issues_resolved: false,
 };
 
 // --- Searchable Dropdown Component ---
@@ -147,6 +140,9 @@ export default function PreTripCheckComponent() {
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [checkState, setCheckState] = useState<CheckState>(defaultCheckState);
+  const [tyrePressureFiles, setTyrePressureFiles] = useState<FileList | null>(null);
+  const [tyreSurfaceFiles, setTyreSurfaceFiles] = useState<FileList | null>(null);
+  const [showEditInfoModal, setShowEditInfoModal] = useState(false);
 
   const isEditing = !!todaysCheck;
   const isPrivilegedUser = userRole === 'Checker' || userRole === 'FloorManager';
@@ -218,11 +214,30 @@ export default function PreTripCheckComponent() {
 
           if (mostRecentCheck && new Date(mostRecentCheck.checked_at) >= today) {
               setTodaysCheck(mostRecentCheck);
-              setCheckState({ ...defaultCheckState, ...mostRecentCheck, tires_ok: (mostRecentCheck.tires_ok as TireState) || defaultTireState, other_issues: mostRecentCheck.other_issues ?? '' });
+              const checkData = { ...mostRecentCheck };
+              delete (checkData as Partial<typeof checkData>).id;
+              setCheckState({ 
+                  ...defaultCheckState, 
+                  ...checkData,
+                  tyre_surface_condition: checkData.tyre_surface_condition as 'Good' | 'Average' | 'Bad' | null,
+                  other_issues: checkData.other_issues ?? '',
+                  tyre_pressure_images: checkData.tyre_pressure_images ?? [],
+                  tyre_surface_images: checkData.tyre_surface_images ?? [],
+              });
           } else {
               setTodaysCheck(null);
               if (mostRecentCheck) {
-                  setCheckState({ ...defaultCheckState, ...mostRecentCheck, tires_ok: (mostRecentCheck.tires_ok as TireState) || defaultTireState, other_issues: '' });
+                  const checkData = { ...mostRecentCheck };
+                  delete (checkData as Partial<typeof checkData>).id;
+                  delete (checkData as Partial<typeof checkData>).checked_at;
+                  setCheckState({ 
+                      ...defaultCheckState, 
+                      ...checkData,
+                      tyre_surface_condition: checkData.tyre_surface_condition as 'Good' | 'Average' | 'Bad' | null,
+                      other_issues: '',
+                      tyre_pressure_images: checkData.tyre_pressure_images ?? [],
+                      tyre_surface_images: checkData.tyre_surface_images ?? [],
+                  });
               } else {
                   setCheckState(defaultCheckState);
               }
@@ -232,19 +247,50 @@ export default function PreTripCheckComponent() {
 
   }, [selectedTruckId, supabase, allTrucks, truck]);
 
-  const handleToggle = (field: keyof Omit<CheckState, 'tires_ok' | 'other_issues'>) => {
+  const handleToggle = (field: keyof Omit<CheckState, 'other_issues' | 'tyre_surface_condition' | 'tyre_pressure_images' | 'tyre_surface_images' | 'issues_resolved'>) => {
     setCheckState(prev => ({ ...prev, [field]: !prev[field] }));
-  };
-
-  const handleTireToggle = (side: keyof TireState) => {
-    setCheckState(prev => ({ ...prev, tires_ok: { ...prev.tires_ok, [side]: !prev.tires_ok[side] } }));
   };
   
   const handleEditClick = (check: PreTripCheck) => {
+      if (!isCheckEditable(check.checked_at)) {
+          setShowEditInfoModal(true);
+          return;
+      }
+
       setTodaysCheck(check);
-      setCheckState({ ...defaultCheckState, ...check, tires_ok: (check.tires_ok as TireState) || defaultTireState, other_issues: check.other_issues ?? '' });
+      const checkData = { ...check };
+      delete (checkData as Partial<typeof checkData>).id;
+      setCheckState({ 
+          ...defaultCheckState, 
+          ...checkData,
+          tyre_surface_condition: check.tyre_surface_condition as 'Good' | 'Average' | 'Bad' | null,
+          other_issues: check.other_issues ?? '',
+          tyre_pressure_images: check.tyre_pressure_images ?? [],
+          tyre_surface_images: check.tyre_surface_images ?? [],
+      });
       window.scrollTo(0, 0);
   }
+
+  const uploadFiles = async (files: FileList | null, folder: string): Promise<string[]> => {
+    if (!files || files.length === 0 || !truck) return [];
+
+    const uploadPromises = Array.from(files).map(async (file) => {
+        const filePath = `${truck.id}/${folder}/${Date.now()}-${file.name}`;
+        const { data, error } = await supabase.storage
+            .from('tires_from_checklist')
+            .upload(filePath, file);
+
+        if (error) {
+            throw new Error(`Failed to upload ${file.name}: ${error.message}`);
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from('tires_from_checklist').getPublicUrl(data.path);
+        return publicUrl;
+    });
+
+    return Promise.all(uploadPromises);
+};
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -254,28 +300,43 @@ export default function PreTripCheckComponent() {
     }
     setStatusMessage(isEditing ? "Updating checklist..." : "Submitting your checklist...");
     setError(null);
+  
+    try {
+      const [pressureImageUrls, surfaceImageUrls] = await Promise.all([
+        uploadFiles(tyrePressureFiles, 'pressure'),
+        uploadFiles(tyreSurfaceFiles, 'surface'),
+      ]);
+  
+      const basePayload = {
+        ...checkState,
+        truck_id: truck.id,
+        worker_id: worker.id,
+        tyre_pressure_images: pressureImageUrls,
+        tyre_surface_images: surfaceImageUrls,
+      };
+  
+      if (isEditing && todaysCheck) {
+        const { error: updateError } = await supabase.from('pre_trip_checks').update({ ...basePayload, issues_resolved: false }).eq('id', todaysCheck.id);
+        if (updateError) throw updateError;
+        setStatusMessage("Checklist updated successfully!");
+      } else {
+        const insertPayload = { ...basePayload };
+        delete (insertPayload as Partial<PreTripCheck>).checked_at; // Ensure DB sets the timestamp
+        const { error: insertError } = await supabase.from('pre_trip_checks').insert(insertPayload);
+        if (insertError) throw insertError;
+        setStatusMessage("Checklist submitted successfully!");
+      }
+      // Refresh data
+      const currentTruckId = selectedTruckId;
+      setSelectedTruckId('');
+      setSelectedTruckId(currentTruckId);
 
-    const payload = { ...checkState };
-
-    const workerIdToLog = worker.id;
-
-    if (isEditing && todaysCheck) {
-        const { error: updateError } = await supabase.from('pre_trip_checks').update({ ...payload, issues_resolved: false }).eq('id', todaysCheck.id);
-        if (updateError) {
-            setError(`Update failed: ${updateError.message}`);
-        } else {
-            setStatusMessage("Checklist updated successfully!");
-        }
-    } else {
-        const { error: insertError } = await supabase.from('pre_trip_checks').insert({ truck_id: truck.id, worker_id: workerIdToLog, ...payload });
-        if (insertError) {
-            setError(`Submission failed: ${insertError.message}`);
-        } else {
-            setStatusMessage("Checklist submitted successfully!");
-        }
+    } catch (err) {
+      setError(err instanceof Error ? `Submission failed: ${err.message}` : "An unknown error occurred during submission.");
+      setStatusMessage(null);
     }
-    setSelectedTruckId(truck.id.toString());
   };
+  
   
   const isCheckEditable = (checkDate: string): boolean => {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -299,6 +360,19 @@ export default function PreTripCheckComponent() {
 
   return (
     <div className="p-2 sm:p-4 max-w-2xl mx-auto space-y-6">
+      <Dialog open={showEditInfoModal} onOpenChange={setShowEditInfoModal}>
+          <DialogContent>
+              <DialogHeader>
+                  <DialogTitle>Edit Window Closed</DialogTitle>
+                  <DialogDescription className="pt-4">
+                      You can only edit a pre-trip check up to 24 hours after its initial submission. For older entries, please contact an administrator if changes are needed.
+                  </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                  <Button onClick={() => setShowEditInfoModal(false)}>OK</Button>
+              </DialogFooter>
+          </DialogContent>
+      </Dialog>
       <div className="bg-white p-4 rounded-lg shadow-md">
         <div className="text-center border-b pb-3 mb-4">
           <TruckIcon className="h-8 w-8 mx-auto text-indigo-600" />
@@ -323,30 +397,65 @@ export default function PreTripCheckComponent() {
                 
                 <form onSubmit={handleSubmit}>
                   <div className="space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <CheckSection title="Driver Side">
-                        <ChecklistItem icon={SunIcon} label="Window" value={checkState.driver_window_ok} onToggle={() => handleToggle('driver_window_ok')} />
-                        <ChecklistItem icon={ViewfinderCircleIcon} label="Mirror" value={checkState.driver_mirror_ok} onToggle={() => handleToggle('driver_mirror_ok')} />
-                        <ChecklistItem icon={CogIcon} label="Tires" value={checkState.tires_ok.driver_side_ok} onToggle={() => handleTireToggle('driver_side_ok')} />
-                      </CheckSection>
-                      
-                      <CheckSection title="Passenger Side">
-                        <ChecklistItem icon={SunIcon} label="Window" value={checkState.passenger_window_ok} onToggle={() => handleToggle('passenger_window_ok')} />
-                        <ChecklistItem icon={ViewfinderCircleIcon} label="Mirror" value={checkState.passenger_mirror_ok} onToggle={() => handleToggle('passenger_mirror_ok')} />
-                        <ChecklistItem icon={CogIcon} label="Tires" value={checkState.tires_ok.passenger_side_ok} onToggle={() => handleTireToggle('passenger_side_ok')} />
-                      </CheckSection>
-                    </div>
+                    <CheckSection title="Exterior Checks">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
+                            <ChecklistItem icon={SunIcon} label="Windshield" value={checkState.windshield_ok} onToggle={() => handleToggle('windshield_ok')} />
+                            <ChecklistItem icon={SunIcon} label="Windows" value={checkState.windows_ok} onToggle={() => handleToggle('windows_ok')} />
+                            <ChecklistItem icon={ViewfinderCircleIcon} label="Mirrors" value={checkState.mirrors_ok} onToggle={() => handleToggle('mirrors_ok')} />
+                            <ChecklistItem icon={CogIcon} label="Tires" value={checkState.tires_ok} onToggle={() => handleToggle('tires_ok')} />
+                        </div>
+                    </CheckSection>
 
                     <CheckSection title="Systems Check">
                         <div className="grid grid-cols-2 gap-x-3 gap-y-2">
-                            <ChecklistItem icon={SunIcon} label="Windshield" value={checkState.windshield_ok} onToggle={() => handleToggle('windshield_ok')} />
-                            <ChecklistItem icon={ViewfinderCircleIcon} label="Center Mirror" value={checkState.center_mirror_ok} onToggle={() => handleToggle('center_mirror_ok')} />
                             <ChecklistItem icon={LightBulbIcon} label="Lights" value={checkState.lights_ok} onToggle={() => handleToggle('lights_ok')} />
                             <ChecklistItem icon={SpeakerWaveIcon} label="Hooter" value={checkState.hooter_ok} onToggle={() => handleToggle('hooter_ok')} />
                             <ChecklistItem icon={StopCircleIcon} label="Brakes" value={checkState.brakes_ok} onToggle={() => handleToggle('brakes_ok')} />
                             <ChecklistItem icon={FireIcon} label="Fridge Unit" value={checkState.fridge_ok} onToggle={() => handleToggle('fridge_ok')} />
+                        </div>
+                    </CheckSection>
+                     <CheckSection title="Fluid Levels & Battery">
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-2">
                             <ChecklistItem icon={BeakerIcon} label="Oil Level" value={checkState.oil_level_ok} onToggle={() => handleToggle('oil_level_ok')} />
-                            <ChecklistItem icon={CloudIcon} label="Coolant" value={checkState.water_level_ok} onToggle={() => handleToggle('water_level_ok')} />
+                            <ChecklistItem icon={CloudIcon} label="Coolant Level" value={checkState.coolant_level_ok} onToggle={() => handleToggle('coolant_level_ok')} />
+                            <ChecklistItem icon={StopCircleIcon} label="Brake Fluid" value={checkState.brake_fluid_level_ok} onToggle={() => handleToggle('brake_fluid_level_ok')} />
+                            <ChecklistItem icon={Battery0Icon} label="Battery Secure" value={checkState.battery_secure_and_clean} onToggle={() => handleToggle('battery_secure_and_clean')} />
+                        </div>
+                    </CheckSection>
+
+                    <CheckSection title="Tyre Inspection">
+                        <div className="space-y-4">
+                           <ChecklistItem icon={CogIcon} label="Tyre Pressure Correct" value={checkState.tyre_pressure_correct} onToggle={() => handleToggle('tyre_pressure_correct')} />
+                            <div>
+                               <label className="block text-xs font-medium text-gray-700 mb-1">Tyre Surface Condition</label>
+                                <select 
+                                    value={checkState.tyre_surface_condition || ''}
+                                    onChange={(e) => setCheckState(prev => ({...prev, tyre_surface_condition: e.target.value as 'Good' | 'Average' | 'Bad'}))}
+                                    className="w-full p-2 border rounded-md text-gray-900 text-sm"
+                                >
+                                    <option value="Good">Good</option>
+                                    <option value="Average">Average</option>
+                                    <option value="Bad">Bad</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Tyre Pressure Photos (Optional)</label>
+                                <input 
+                                    type="file" 
+                                    multiple 
+                                    onChange={(e) => setTyrePressureFiles(e.target.files)}
+                                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                                />
+                            </div>
+                             <div>
+                                <label className="block text-xs font-medium text-gray-700 mb-1">Tyre Surface Photos (Optional)</label>
+                                <input 
+                                    type="file" 
+                                    multiple 
+                                    onChange={(e) => setTyreSurfaceFiles(e.target.files)}
+                                    className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+                                />
+                            </div>
                         </div>
                     </CheckSection>
                   </div>
@@ -374,16 +483,14 @@ export default function PreTripCheckComponent() {
                                 </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
-                                {recentChecks.length > 0 ? recentChecks.map((check, index) => (
+                                {recentChecks.length > 0 ? recentChecks.map((check) => (
                                     <tr key={check.id}>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{new Date(check.checked_at).toLocaleString()}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{getIssuesSummary(check)}</td>
                                         <td className="px-4 py-3 whitespace-nowrap text-right">
-                                            {index === 0 && isCheckEditable(check.checked_at) && (
-                                                <button onClick={() => handleEditClick(check)} className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex items-center gap-1 ml-auto">
-                                                    <PencilIcon className="h-4 w-4"/> Edit
-                                                </button>
-                                            )}
+                                            <button onClick={() => handleEditClick(check)} className="text-indigo-600 hover:text-indigo-800 text-sm font-semibold flex items-center gap-1 ml-auto">
+                                                <PencilIcon className="h-4 w-4"/> Edit
+                                            </button>
                                         </td>
                                     </tr>
                                 )) : (

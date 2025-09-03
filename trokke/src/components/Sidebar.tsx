@@ -1,3 +1,4 @@
+// src/components/Sidebar.tsx
 "use client";
 
 import Link from "next/link";
@@ -40,6 +41,7 @@ const adminCoreLinks: NavLink[] = [
   { href: "/admin/trucks", label: "Fleet Overview", icon: ChartPieIcon },
   { href: "/admin/fleet-analytics", label: "Fleet Analytics", icon: TableCellsIcon },
   { href: "/admin/worker-analytics", label: "Worker Analytics", icon: ChartBarIcon },
+  { href: "/admin/services", label: "Service Records", icon: WrenchScrewdriverIcon },
   { href: "/admin/workers", label: "Workers", icon: UsersIcon },
   { href: "/admin/trips", label: "Trips", icon: MapPinIcon },
   { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
