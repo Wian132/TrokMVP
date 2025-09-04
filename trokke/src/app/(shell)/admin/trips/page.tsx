@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 
 
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 import { type Database } from '@/types/supabase';
 import { Button } from '@/components/ui/button';
@@ -120,6 +121,7 @@ function TripModal({ isOpen, onClose, onSave, trip, truckId }: TripModalProps) {
 // --- Main Page Component ---
 const TripsPage = () => {
   const supabase = createClient();
+  const searchParams = useSearchParams();
   
   const [trucks, setTrucks] = useState<Truck[]>([]);
   const [selectedTruckId, setSelectedTruckId] = useState<string>('');
@@ -133,6 +135,13 @@ const TripsPage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTrip, setEditingTrip] = useState<Trip | null>(null);
   const [tripToDelete, setTripToDelete] = useState<Trip | null>(null);
+
+  useEffect(() => {
+    const truckIdFromUrl = searchParams.get('truckId');
+    if (truckIdFromUrl) {
+      setSelectedTruckId(truckIdFromUrl);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const fetchTrucks = async () => {

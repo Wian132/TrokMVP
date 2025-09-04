@@ -1,3 +1,4 @@
+// src/app/(shell)/layout.tsx
 'use client';
 
 import { useRouter, usePathname } from 'next/navigation';
@@ -28,9 +29,11 @@ export default function ShellLayout({
   const router = useRouter();
   const pathname = usePathname();
 
+  // --- MODIFIED: Added Planner Title ---
   const pageTitle = useMemo(() => {
     const routeTitles: Record<string, string> = {
       '/admin/trucks': 'Fleet Overview',
+      '/admin/planner': 'Weekly Planner',
       '/admin/fleet-analytics': 'Fleet Analytics',
       '/admin/clients': 'Manage Clients',
       '/admin/workers': 'Manage Workers',
@@ -46,7 +49,6 @@ export default function ShellLayout({
       '/worker/log-trip': 'Log Trip',
       '/refueler/dashboard': 'Refueler Dashboard',
       '/refueler/refuels': 'Log Refuel',
-      // ADDED: Titles for new roles
       '/checker/dashboard': 'Checker Dashboard',
       '/checker/pre-trip-check': 'Check a Vehicle',
       '/floor-manager/dashboard': 'Floor Manager Dashboard',
@@ -72,8 +74,6 @@ export default function ShellLayout({
         return;
       }
 
-      // --- FIX START ---
-      // We cast the result of the query to our new, more specific type.
       const { data: profile, error } = await supabase
         .from('profiles')
         .select('roles(name)') 
@@ -87,13 +87,11 @@ export default function ShellLayout({
         return;
       }
       
-      // Now TypeScript understands the shape of 'profile' and 'profile.roles'.
       const typedProfile = profile as ProfileWithRole;
       const roleRelation = typedProfile.roles;
       const roleName = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
 
       setUserRole(roleName || null);
-      // --- FIX END ---
       
       setIsLoading(false);
     };

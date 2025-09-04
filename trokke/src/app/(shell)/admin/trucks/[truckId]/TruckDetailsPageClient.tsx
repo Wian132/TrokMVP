@@ -1,13 +1,13 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { User, Fuel, AlertTriangle, Wrench, Calendar, MapPin, Route, GanttChartSquare, Pencil, CheckCircle2, Info } from 'lucide-react';
+import { User, Fuel, AlertTriangle, Wrench, Calendar, MapPin, Route, GanttChartSquare, Pencil, CheckCircle2, Info, ClipboardList } from 'lucide-react';
 import { Database } from '@/types/supabase';
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
@@ -53,6 +53,7 @@ const parseReportedIssues = (check: PreTripCheck | null) => {
 
 export default function TruckDetailsPageClient() {
     const params = useParams();
+    const router = useRouter();
     const truckIdParam = Array.isArray(params.truckId) ? params.truckId[0] : params.truckId;
     
     const [truck, setTruck] = useState<TruckWithDrivers | null>(null);
@@ -128,14 +129,15 @@ export default function TruckDetailsPageClient() {
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
                 <DriverCard type="active" truck={truck} onTruckUpdate={fetchData} />
                 <DriverCard type="primary" truck={truck} onTruckUpdate={fetchData} />
-                <Card className="lg:col-span-1 bg-white">
+                <Card className="lg:col-span-1 bg-white flex flex-col">
                     <CardHeader>
                         <CardTitle className="flex items-center text-gray-800">
                             <GanttChartSquare className="mr-2" /> Last Trip Details
                             <InfoTooltip text="A summary of the most recently logged trip for this vehicle." />
                         </CardTitle>
                     </CardHeader>
-                    <CardContent>
+                    <CardContent className="flex flex-col flex-grow">
+                        <div className="flex-grow">
                         {lastTrip ? (
                             <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
                                 <div className="flex items-center gap-2"><Calendar className="h-4 w-4 text-gray-400" /> <strong>Date:</strong> {lastTrip.trip_date ? new Date(lastTrip.trip_date).toLocaleDateString() : 'N/A'}</div>
@@ -146,6 +148,8 @@ export default function TruckDetailsPageClient() {
                         ) : (
                             <p className="text-gray-500">No trip data available for this truck.</p>
                         )}
+                        </div>
+                        <Button className="w-full mt-4 bg-green-700 text-white hover:bg-green-800" onClick={() => router.push(`/admin/trips?truckId=${truck.id}`)}>View Full Trip History</Button>
                     </CardContent>
                 </Card>
             </div>
@@ -159,16 +163,21 @@ export default function TruckDetailsPageClient() {
                             </CardTitle>
                             <CardDescription className="text-gray-500">Issues from the latest pre-trip check on {lastCheck ? new Date(lastCheck.checked_at).toLocaleString() : 'N/A'}.</CardDescription>
                         </div>
-                        {reportedIssues.length > 0 && !lastCheck?.issues_resolved && (
-                             <Button size="sm" onClick={async () => {
-                                 if (!lastCheck) return;
-                                 const supabase = createClient();
-                                 await supabase.from('pre_trip_checks').update({ issues_resolved: true }).eq('id', lastCheck.id);
-                                 fetchData();
-                             }} className="bg-green-700 text-white hover:bg-green-800 transition-transform transform hover:scale-105">
-                                 <CheckCircle2 className="h-4 w-4 mr-2"/>Mark as Resolved
+                        <div className="flex items-center gap-2">
+                             <Button size="sm" className="bg-green-700 text-white hover:bg-green-800" onClick={() => router.push(`/admin/check-ins?truckId=${truck.id}`)}>
+                                <ClipboardList className="h-4 w-4 mr-2"/>View All Check-ins
                              </Button>
-                        )}
+                            {reportedIssues.length > 0 && !lastCheck?.issues_resolved && (
+                                 <Button size="sm" onClick={async () => {
+                                     if (!lastCheck) return;
+                                     const supabase = createClient();
+                                     await supabase.from('pre_trip_checks').update({ issues_resolved: true }).eq('id', lastCheck.id);
+                                     fetchData();
+                                 }} className="bg-green-700 text-white hover:bg-green-800 transition-transform transform hover:scale-105">
+                                     <CheckCircle2 className="h-4 w-4 mr-2"/>Mark as Resolved
+                                 </Button>
+                            )}
+                        </div>
                     </CardHeader>
                     <CardContent>
                         {lastCheck?.issues_resolved ? (<p className="text-center text-green-600 font-semibold py-4">All reported issues have been marked as resolved.</p>) : reportedIssues.length > 0 ? (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { type Database } from '@/types/supabase';
 import { Button } from '@/components/ui/button';
@@ -8,238 +8,305 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { PlusCircleIcon, BeakerIcon, ArrowDown, ArrowUp, Pencil, Trash2 } from 'lucide-react';
+import { PlusCircleIcon, BeakerIcon, ArrowDown, ArrowUp, Pencil, Trash2, ChevronDown } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useAuth } from '@/components/AuthContext';
 
-type DieselPurchase = Database['public']['Tables']['diesel_purchases']['Row'];
+// --- Type Definitions ---
+type Trip = Database['public']['Tables']['truck_trips']['Row'];
+type DieselPurchase = Database['public']['Tables']['diesel_purchases']['Row'] & {
+  is_active?: boolean;
+  is_empty?: boolean;
+  spillage_liters?: number | null;
+  used_liters?: number;
+  total_km_driven?: number;
+  avg_kpl?: number;
+};
 
-// --- FIX START ---
-// Define the expected shape of the profile data with the nested role.
-// This tells TypeScript what the 'roles' property will look like.
 type ProfileWithRole = {
   roles: { name: string } | { name: string }[] | null;
 };
-// --- FIX END ---
-
 
 export default function DieselPage() {
     const supabase = createClient();
     const { user } = useAuth();
     const [purchases, setPurchases] = useState<DieselPurchase[]>([]);
+    const [allTrips, setAllTrips] = useState<Trip[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [totals, setTotals] = useState({ purchased: 0, refueled: 0 });
+    const [totals, setTotals] = useState({ purchased: 0, refueled: 0, remaining: 0 });
     const [userRole, setUserRole] = useState<string | null>(null);
 
-    const [newPurchase, setNewPurchase] = useState({
-        liters: '',
-        price_per_liter: '',
-        purchase_date: new Date().toISOString().split('T')[0],
-    });
-
+    const [newPurchase, setNewPurchase] = useState({ liters: '', price_per_liter: '', purchase_date: new Date().toISOString().split('T')[0] });
     const [editingPurchase, setEditingPurchase] = useState<DieselPurchase | null>(null);
     const [deletingPurchase, setDeletingPurchase] = useState<DieselPurchase | null>(null);
+    const [activatingPurchase, setActivatingPurchase] = useState<DieselPurchase | null>(null);
 
     const fetchUserRole = useCallback(async () => {
         if (user) {
-            const { data: profile } = await supabase
-                .from('profiles')
-                .select('roles(name)')
-                .eq('id', user.id)
-                .single();
-            
-            // --- FIX START ---
-            // We cast the result to our new, more specific type.
+            const { data: profile } = await supabase.from('profiles').select('roles(name)').eq('id', user.id).single();
             const typedProfile = profile as ProfileWithRole;
-            const roleRelation = typedProfile?.roles;
-            const roleName = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
-            setUserRole(roleName || null);
-            // --- FIX END ---
+            setUserRole((Array.isArray(typedProfile.roles) ? typedProfile.roles[0]?.name : typedProfile.roles?.name) || null);
         }
     }, [user, supabase]);
 
-    const fetchPurchasesAndTotals = useCallback(async () => {
+    const fetchAllData = useCallback(async () => {
         setLoading(true);
         setError(null);
 
-        const { data: purchasesData, error: purchasesError } = await supabase
-            .from('diesel_purchases')
-            .select('*')
-            .order('purchase_date', { ascending: false });
+        const purchasesPromise = supabase.from('diesel_purchases').select('*').order('purchase_date', { ascending: false });
+        const refuelsPromise = supabase.from('refueler_logs').select('liters_filled, tank_id');
+        const tripsPromise = supabase.from('truck_trips').select('*');
 
-        if (purchasesError) {
-            setError(purchasesError.message);
+        const [purchasesResult, refuelsResult, tripsResult] = await Promise.all([purchasesPromise, refuelsPromise, tripsPromise]);
+
+        if (purchasesResult.error || refuelsResult.error || tripsResult.error) {
+            setError(purchasesResult.error?.message || refuelsResult.error?.message || tripsResult.error?.message || "An unknown error occurred while fetching data.");
             setLoading(false);
             return;
         }
 
-        setPurchases(purchasesData || []);
-        const totalPurchased = (purchasesData || []).reduce((sum, p) => sum + p.liters, 0);
+        const refuelsByTank = (refuelsResult.data || []).reduce((acc, r) => {
+            if (r.tank_id) acc[r.tank_id] = (acc[r.tank_id] || 0) + (r.liters_filled || 0);
+            return acc;
+        }, {} as Record<number, number>);
 
-        const { data: refuelsData, error: refuelsError } = await supabase
-            .from('refueler_logs')
-            .select('liters_filled');
-
-        if (refuelsError) {
-            setError(refuelsError.message);
-        }
-
-        const totalRefueled = (refuelsData || []).reduce((sum, r) => sum + (r.liters_filled || 0), 0);
-        setTotals({ purchased: totalPurchased, refueled: totalRefueled });
+        const enrichedPurchases = (purchasesResult.data || []).map(p => ({ ...p, used_liters: refuelsByTank[p.id] || 0 }));
+        setPurchases(enrichedPurchases);
+        setAllTrips(tripsResult.data || []);
+        
+        const totalPurchased = enrichedPurchases.reduce((sum, p) => sum + p.liters, 0);
+        const totalRefueled = (refuelsResult.data || []).reduce((sum, r) => sum + (r.liters_filled || 0), 0);
+        const totalStockRemaining = enrichedPurchases.filter(p => !p.is_empty).reduce((sum, p) => sum + (p.liters - (p.used_liters || 0)), 0);
+        
+        setTotals({ purchased: totalPurchased, refueled: totalRefueled, remaining: totalStockRemaining });
         setLoading(false);
     }, [supabase]);
 
     useEffect(() => {
         fetchUserRole();
-        fetchPurchasesAndTotals();
-    }, [fetchUserRole, fetchPurchasesAndTotals]);
+        fetchAllData();
+    }, [fetchUserRole, fetchAllData]);
+    
+    const tankAnalytics = useMemo(() => {
+        if (!purchases.length) return [];
+        const sortedPurchases = [...purchases].sort((a, b) => new Date(a.purchase_date).getTime() - new Date(b.purchase_date).getTime());
+        return sortedPurchases.map((purchase, index) => {
+            const purchaseDate = new Date(purchase.purchase_date);
+            const nextPurchaseDate = index + 1 < sortedPurchases.length ? new Date(sortedPurchases[index + 1].purchase_date) : new Date();
+            
+            const totalKmDriven = allTrips
+                .filter(trip => {
+                    const tripDate = new Date(trip.trip_date!);
+                    return tripDate >= purchaseDate && tripDate < nextPurchaseDate && trip.total_km;
+                })
+                .reduce((sum, trip) => sum + trip.total_km!, 0);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const { name, value } = e.target;
-        if (editingPurchase) {
-            setEditingPurchase(prev => prev ? { ...prev, [name]: value } : null);
-        } else {
-            setNewPurchase((prev) => ({ ...prev, [name]: value }));
+            const usedLiters = purchase.used_liters || 0;
+            const avgKpl = usedLiters > 0 ? totalKmDriven / usedLiters : 0;
+            return { ...purchase, total_km_driven: totalKmDriven, avg_kpl: avgKpl };
+        }).reverse();
+    }, [purchases, allTrips]);
+
+    const handleSetActive = async (markPreviousAsEmpty: boolean) => {
+        if (!activatingPurchase) return;
+        const currentActive = purchases.find(p => p.is_active);
+        if (currentActive) {
+            const updates: Partial<DieselPurchase> = { is_active: false };
+            if (markPreviousAsEmpty) {
+                updates.is_empty = true;
+                updates.spillage_liters = currentActive.liters - (currentActive.used_liters || 0);
+            }
+            await supabase.from('diesel_purchases').update(updates).eq('id', currentActive.id);
         }
+        await supabase.from('diesel_purchases').update({ is_active: true }).eq('id', activatingPurchase.id);
+        setStatusMessage(`Purchase from ${new Date(activatingPurchase.purchase_date).toLocaleDateString()} is now active.`);
+        setActivatingPurchase(null);
+        await fetchAllData();
     };
 
     const handleCreatePurchase = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        setError(null);
-        setStatusMessage('Adding new purchase...');
         const liters = parseFloat(newPurchase.liters);
         const price_per_liter = parseFloat(newPurchase.price_per_liter);
-
-        if (isNaN(liters) || liters <= 0) {
-            setError('Please enter a valid number of liters.');
-            setStatusMessage(null);
-            return;
-        }
-        if (isNaN(price_per_liter) || price_per_liter <= 0) {
-            setError('Please enter a valid price per liter.');
-            setStatusMessage(null);
-            return;
-        }
-
-        const { error: insertError } = await supabase.from('diesel_purchases').insert({
-            liters, price_per_liter, purchase_date: newPurchase.purchase_date,
-        });
-
-        if (insertError) {
-            setError(insertError.message);
-            setStatusMessage(null);
-        } else {
+        if (isNaN(liters) || isNaN(price_per_liter)) { setError('Please enter valid numbers.'); return; }
+        const { error } = await supabase.from('diesel_purchases').insert({ liters, price_per_liter, purchase_date: newPurchase.purchase_date });
+        if (error) setError(error.message); else {
             setNewPurchase({ liters: '', price_per_liter: '', purchase_date: new Date().toISOString().split('T')[0] });
-            await fetchPurchasesAndTotals();
             setStatusMessage('Successfully added new diesel purchase.');
-            setTimeout(() => setStatusMessage(null), 3000);
+            await fetchAllData();
         }
     };
 
     const handleUpdatePurchase = async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
         if (!editingPurchase) return;
-
-        const liters = parseFloat(String(editingPurchase.liters));
-        const price_per_liter = parseFloat(String(editingPurchase.price_per_liter));
-
-        const { error: updateError } = await supabase.from('diesel_purchases').update({
-            liters, price_per_liter, purchase_date: editingPurchase.purchase_date,
-        }).eq('id', editingPurchase.id);
-
-        if (updateError) {
-            setError(updateError.message);
-        } else {
+        const { error } = await supabase.from('diesel_purchases').update({ liters: editingPurchase.liters, price_per_liter: editingPurchase.price_per_liter, purchase_date: editingPurchase.purchase_date }).eq('id', editingPurchase.id);
+        if (error) setError(error.message); else {
             setEditingPurchase(null);
-            await fetchPurchasesAndTotals();
             setStatusMessage('Purchase updated successfully.');
-            setTimeout(() => setStatusMessage(null), 3000);
+            await fetchAllData();
         }
     };
 
     const handleDeletePurchase = async () => {
         if (!deletingPurchase) return;
-        const { error: deleteError } = await supabase.from('diesel_purchases').delete().eq('id', deletingPurchase.id);
-
-        if (deleteError) {
-            setError(deleteError.message);
-        } else {
+        const { error } = await supabase.from('diesel_purchases').delete().eq('id', deletingPurchase.id);
+        if (error) setError(error.message); else {
             setDeletingPurchase(null);
-            await fetchPurchasesAndTotals();
             setStatusMessage('Purchase deleted successfully.');
-            setTimeout(() => setStatusMessage(null), 3000);
+            await fetchAllData();
         }
     };
     
     const isAdmin = userRole === 'SuperAdmin' || userRole === 'Admin';
+    const currentActivePurchase = purchases.find(p => p.is_active);
 
     return (
         <div className="p-6 bg-gray-50 min-h-screen">
             <h1 className="text-3xl font-bold text-gray-800 mb-6">Manage Diesel Purchases</h1>
+            
             {error && <p className="text-red-600 bg-red-100 p-3 rounded-md mb-4">{error}</p>}
             {statusMessage && <p className="text-green-600 bg-green-100 p-3 rounded-md mb-4">{statusMessage}</p>}
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                 <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-800">Total Purchased</CardTitle><ArrowDown className="h-4 w-4 text-green-500" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{totals.purchased.toLocaleString()} L</div></CardContent></Card>
-                <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-800">Total Used (Refuels)</CardTitle><ArrowUp className="h-4 w-4 text-red-500" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{totals.refueled.toLocaleString()} L</div></CardContent></Card>
-                <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-800">Stock Remaining</CardTitle><BeakerIcon className="h-4 w-4 text-blue-500" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{(totals.purchased - totals.refueled).toLocaleString()} L</div></CardContent></Card>
+                <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-800">Total Used</CardTitle><ArrowUp className="h-4 w-4 text-red-500" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{totals.refueled.toLocaleString()} L</div></CardContent></Card>
+                <Card><CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2"><CardTitle className="text-sm font-medium text-gray-800">Stock Remaining</CardTitle><BeakerIcon className="h-4 w-4 text-blue-500" /></CardHeader><CardContent><div className="text-2xl font-bold text-gray-900">{totals.remaining.toLocaleString(undefined, {maximumFractionDigits: 2})} L</div></CardContent></Card>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <Card className="lg:col-span-1 bg-white shadow-lg">
-                    <CardHeader><CardTitle className="text-gray-900">Add New Purchase</CardTitle><CardDescription className="text-gray-600">Log a new bulk diesel purchase.</CardDescription></CardHeader>
-                    <CardContent>
-                        <form onSubmit={handleCreatePurchase} className="space-y-4">
-                            <div><Label htmlFor="purchase_date" className="text-gray-700 font-semibold">Purchase Date</Label><Input type="date" name="purchase_date" id="purchase_date" value={newPurchase.purchase_date} onChange={handleInputChange} className="bg-white text-black border-gray-300 focus:ring-indigo-500 focus:border-indigo-500" required /></div>
-                            <div><Label htmlFor="liters" className="text-gray-700 font-semibold">Liters</Label><Input type="number" name="liters" id="liters" value={newPurchase.liters} onChange={handleInputChange} className="bg-white text-black border-gray-300 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., 10000" required /></div>
-                            <div><Label htmlFor="price_per_liter" className="text-gray-700 font-semibold">Price Per Liter (R)</Label><Input type="number" name="price_per_liter" id="price_per_liter" value={newPurchase.price_per_liter} onChange={handleInputChange} className="bg-white text-black border-gray-300 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., 20.00" step="0.01" required /></div>
-                            <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700"><PlusCircleIcon className="mr-2 h-4 w-4" />Add Purchase</Button>
-                        </form>
-                    </CardContent>
-                </Card>
-                <Card className="lg:col-span-2 bg-white shadow-lg">
-                    <CardHeader><CardTitle className="text-gray-900">Purchase History</CardTitle><CardDescription className="text-gray-600">History of all bulk diesel purchases.</CardDescription></CardHeader>
-                    <CardContent>
-                        {loading ? (<p className="text-gray-600">Loading purchases...</p>) : (
-                            <div className="overflow-x-auto">
-                                <Table>
-                                    <TableHeader><TableRow><TableHead className="text-gray-800 font-bold">Date</TableHead><TableHead className="text-gray-800 font-bold">Liters</TableHead><TableHead className="text-gray-800 font-bold">Price/L</TableHead><TableHead className="text-gray-800 font-bold">Total Cost</TableHead>{isAdmin && <TableHead className="text-right text-gray-800 font-bold">Actions</TableHead>}</TableRow></TableHeader>
-                                    <TableBody>
-                                        {purchases.map((purchase) => (
-                                            <TableRow key={purchase.id}>
-                                                <TableCell className="font-medium text-gray-800">{new Date(purchase.purchase_date).toLocaleDateString()}</TableCell>
-                                                <TableCell className="text-gray-700">{purchase.liters} L</TableCell>
-                                                <TableCell className="text-gray-700">R {Number(purchase.price_per_liter).toFixed(2)}</TableCell>
-                                                <TableCell className="text-gray-700 font-semibold">R {(purchase.liters * purchase.price_per_liter).toFixed(2)}</TableCell>
-                                                {isAdmin && (<TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => setEditingPurchase(purchase)}><Pencil className="h-4 w-4 text-blue-600" /></Button><Button variant="ghost" size="icon" onClick={() => setDeletingPurchase(purchase)}><Trash2 className="h-4 w-4 text-red-600" /></Button></TableCell>)}
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
+            
+            <Collapsible defaultOpen className="space-y-4 mb-8">
+                <CollapsibleTrigger className="w-full">
+                    <div className="flex items-center justify-between p-4 bg-gray-200 rounded-t-lg border-b">
+                        <h2 className="text-xl font-semibold text-gray-800">Diesel Management</h2>
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                    </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="p-4 bg-white rounded-b-lg border border-t-0">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <Card className="lg:col-span-1 shadow-none border-0">
+                            <CardHeader>
+                                <CardTitle className="text-gray-900">Add New Purchase</CardTitle>
+                                <CardDescription className="text-gray-600">Log a new bulk diesel purchase.</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <form onSubmit={handleCreatePurchase} className="space-y-4">
+                                    <div><Label htmlFor="purchase_date" className="text-gray-700 font-semibold">Purchase Date</Label><Input type="date" name="purchase_date" id="purchase_date" value={newPurchase.purchase_date} onChange={(e) => setNewPurchase(p => ({...p, purchase_date: e.target.value}))} className="bg-white text-black" required /></div>
+                                    <div><Label htmlFor="liters" className="text-gray-700 font-semibold">Liters</Label><Input type="number" name="liters" id="liters" value={newPurchase.liters} onChange={(e) => setNewPurchase(p => ({...p, liters: e.target.value}))} className="bg-white text-black" placeholder="e.g., 10000" required /></div>
+                                    <div><Label htmlFor="price_per_liter" className="text-gray-700 font-semibold">Price Per Liter (R)</Label><Input type="number" name="price_per_liter" id="price_per_liter" value={newPurchase.price_per_liter} onChange={(e) => setNewPurchase(p => ({...p, price_per_liter: e.target.value}))} className="bg-white text-black" placeholder="e.g., 20.00" step="0.01" required /></div>
+                                    <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700"><PlusCircleIcon className="mr-2 h-4 w-4" />Add Purchase</Button>
+                                </form>
+                            </CardContent>
+                        </Card>
+                        <Card className="lg:col-span-2 shadow-none border-0">
+                            <CardHeader><CardTitle className="text-gray-900">Purchase History</CardTitle><CardDescription className="text-gray-600">History of all bulk diesel purchases.</CardDescription></CardHeader>
+                            <CardContent>
+                                {loading ? <p>Loading...</p> : 
+                                <div className="overflow-x-auto">
+                                    <Table>
+                                        <TableHeader><TableRow><TableHead>Status</TableHead><TableHead>Date</TableHead><TableHead>Liters (Used/Purchased)</TableHead><TableHead>Price/L</TableHead><TableHead>Remaining</TableHead>{isAdmin && <TableHead className="text-right">Actions</TableHead>}</TableRow></TableHeader>
+                                        <TableBody>
+                                            {purchases.map(p => (
+                                                <TableRow key={p.id} className={p.is_active ? 'bg-green-50' : ''}>
+                                                    <TableCell>{p.is_active ? <span className="px-2 py-1 font-semibold leading-tight text-green-700 bg-green-100 rounded-full">Active</span> : p.is_empty ? <span className="px-2 py-1 font-semibold leading-tight text-gray-700 bg-gray-100 rounded-full">Empty</span> : <Button size="sm" variant="outline" onClick={() => setActivatingPurchase(p)}>Set Active</Button>}</TableCell>
+                                                    <TableCell>{new Date(p.purchase_date).toLocaleDateString()}</TableCell>
+                                                    <TableCell>{(p.used_liters || 0).toLocaleString()} L / {p.liters.toLocaleString()} L</TableCell>
+                                                    <TableCell>R {Number(p.price_per_liter).toFixed(2)}</TableCell>
+                                                    <TableCell className={`font-semibold ${(p.liters - (p.used_liters || 0)) < 0 ? 'text-red-600' : 'text-gray-800'}`}>{(p.liters - (p.used_liters || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})} L</TableCell>
+                                                    {isAdmin && <TableCell className="text-right"><Button variant="ghost" size="icon" onClick={() => setEditingPurchase(p)}><Pencil className="h-4 w-4 text-blue-600" /></Button><Button variant="ghost" size="icon" onClick={() => setDeletingPurchase(p)}><Trash2 className="h-4 w-4 text-red-600" /></Button></TableCell>}
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                                }
+                            </CardContent>
+                        </Card>
+                    </div>
+                </CollapsibleContent>
+            </Collapsible>
+            
+            <Collapsible className="space-y-4">
+                <CollapsibleTrigger className="w-full">
+                    <div className="flex items-center justify-between p-4 bg-gray-200 rounded-t-lg border-b">
+                        <h2 className="text-xl font-semibold text-gray-800">Tank Analytics</h2>
+                        <ChevronDown className="h-5 w-5 text-gray-500" />
+                    </div>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="p-4 bg-white rounded-b-lg border border-t-0">
+                    {loading ? <p>Loading analytics...</p> : 
+                    <Table>
+                        <TableHeader><TableRow><TableHead>Purchase Date</TableHead><TableHead>Liters Used</TableHead><TableHead>Spillage</TableHead><TableHead>Total KM Driven</TableHead><TableHead>Average KM/L</TableHead></TableRow></TableHeader>
+                        <TableBody>
+                            {tankAnalytics.map(tank => (
+                                <TableRow key={tank.id}>
+                                    <TableCell>{new Date(tank.purchase_date).toLocaleDateString()}</TableCell>
+                                    <TableCell>{(tank.used_liters || 0).toLocaleString(undefined, {maximumFractionDigits: 2})} L</TableCell>
+                                    <TableCell className={tank.spillage_liters ? 'text-red-600 font-semibold' : ''}>{tank.spillage_liters?.toLocaleString(undefined, {maximumFractionDigits: 2}) ?? 'N/A'} L</TableCell>
+                                    <TableCell>{(tank.total_km_driven || 0).toLocaleString(undefined, {maximumFractionDigits: 0})} km</TableCell>
+                                    <TableCell>{(tank.avg_kpl || 0).toFixed(2)} km/L</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                    }
+                </CollapsibleContent>
+            </Collapsible>
+            
+            {/* Modals */}
+            {activatingPurchase && (
+                <Dialog open onOpenChange={() => setActivatingPurchase(null)}>
+                    <DialogContent className="bg-white text-black">
+                        <DialogHeader>
+                            <DialogTitle>Activate New Purchase</DialogTitle>
+                            <DialogDescription>
+                                Please confirm the status of the current active tank before proceeding.
+                            </DialogDescription>
+                        </DialogHeader>
+                        {currentActivePurchase && (
+                            <div className="my-4 p-4 bg-yellow-50 border-l-4 border-yellow-400">
+                                <h4 className="font-bold text-yellow-800">Action Required for Current Tank</h4>
+                                <p className="text-sm text-yellow-900 mt-2">The current tank has approx. <strong>{((currentActivePurchase.liters || 0) - (currentActivePurchase.used_liters || 0)).toLocaleString(undefined, {maximumFractionDigits: 2})} L</strong> remaining.</p>
+                                <p className="text-sm text-yellow-900 mt-2">Is this tank now completely empty?</p>
                             </div>
                         )}
-                    </CardContent>
-                </Card>
-            </div>
+                        <DialogFooter className="gap-2">
+                            {currentActivePurchase ? (
+                                <>
+                                    <Button variant="outline" onClick={() => handleSetActive(false)}>No, Keep Remainder</Button>
+                                    <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => handleSetActive(true)}>Yes, It&apos;s Empty</Button>
+                                </>
+                            ) : (
+                                <>
+                                    <Button variant="ghost" onClick={() => setActivatingPurchase(null)}>Cancel</Button>
+                                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleSetActive(false)}>Confirm Activation</Button>
+                                </>
+                            )}
+                        </DialogFooter>
+                    </DialogContent>
+                </Dialog>
+            )}
 
             {editingPurchase && (
-                <Dialog open={!!editingPurchase} onOpenChange={() => setEditingPurchase(null)}>
-                    <DialogContent className="bg-white text-gray-900">
+                <Dialog open onOpenChange={() => setEditingPurchase(null)}>
+                    <DialogContent className="bg-white text-black">
                         <DialogHeader><DialogTitle>Edit Diesel Purchase</DialogTitle></DialogHeader>
                         <form onSubmit={handleUpdatePurchase} className="space-y-4 pt-4">
-                            <div><Label htmlFor="edit_purchase_date">Purchase Date</Label><Input id="edit_purchase_date" type="date" name="purchase_date" value={editingPurchase.purchase_date.split('T')[0]} onChange={handleInputChange} required /></div>
-                            <div><Label htmlFor="edit_liters">Liters</Label><Input id="edit_liters" type="number" name="liters" value={editingPurchase.liters} onChange={handleInputChange} required /></div>
-                            <div><Label htmlFor="edit_price_per_liter">Price Per Liter (R)</Label><Input id="edit_price_per_liter" type="number" name="price_per_liter" value={editingPurchase.price_per_liter} step="0.01" onChange={handleInputChange} required /></div>
-                            <DialogFooter><Button type="button" variant="ghost" onClick={() => setEditingPurchase(null)}>Cancel</Button><Button type="submit">Save Changes</Button></DialogFooter>
+                            <div><Label htmlFor="edit_date">Date</Label><Input id="edit_date" type="date" name="purchase_date" value={editingPurchase?.purchase_date?.split('T')[0] || ''} onChange={(e) => setEditingPurchase(p => p ? {...p, purchase_date: e.target.value} : null)} className="bg-white text-black border-gray-300" /></div>
+                            <div><Label htmlFor="edit_liters">Liters</Label><Input id="edit_liters" type="number" name="liters" value={editingPurchase?.liters || ''} onChange={(e) => setEditingPurchase(p => p ? {...p, liters: Number(e.target.value)}: null)} className="bg-white text-black border-gray-300" /></div>
+                            <div><Label htmlFor="edit_price">Price/L</Label><Input id="edit_price" type="number" name="price_per_liter" value={editingPurchase?.price_per_liter || ''} step="0.01" onChange={(e) => setEditingPurchase(p => p ? {...p, price_per_liter: Number(e.target.value)}: null)} className="bg-white text-black border-gray-300" /></div>
+                            <DialogFooter><Button type="button" variant="ghost" onClick={() => setEditingPurchase(null)}>Cancel</Button><Button type="submit">Save</Button></DialogFooter>
                         </form>
                     </DialogContent>
                 </Dialog>
             )}
 
             {deletingPurchase && (
-                <Dialog open={!!deletingPurchase} onOpenChange={() => setDeletingPurchase(null)}>
-                    <DialogContent className="bg-white text-gray-900">
-                        <DialogHeader><DialogTitle>Confirm Deletion</DialogTitle><DialogDescription>Are you sure you want to delete this purchase record? This action cannot be undone.</DialogDescription></DialogHeader>
+                <Dialog open onOpenChange={() => setDeletingPurchase(null)}>
+                    <DialogContent className="bg-white text-black">
+                        <DialogHeader><DialogTitle>Confirm Deletion</DialogTitle><DialogDescription>Are you sure you want to delete this purchase?</DialogDescription></DialogHeader>
                         <DialogFooter><Button variant="ghost" onClick={() => setDeletingPurchase(null)}>Cancel</Button><Button variant="destructive" onClick={handleDeletePurchase}>Delete</Button></DialogFooter>
                     </DialogContent>
                 </Dialog>

@@ -32,6 +32,8 @@ export default async function RootLayout({
         <AuthProvider serverSession={session}>{children}</AuthProvider>
         {/* Load the Google Maps script globally with async and defer */}
         <Script src={googleMapsUrl} async defer />
+        {/* Load Chart.js for dashboard analytics */}
+        <Script src="https://cdn.jsdelivr.net/npm/chart.js" async />
       </body>
     </html>
   );

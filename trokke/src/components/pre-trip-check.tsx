@@ -1,4 +1,4 @@
-// src/components/PreTripCheck.tsx
+// src/components/pre-trip-check.tsx
 'use client';
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
@@ -9,6 +9,7 @@ import { TruckIcon, ExclamationTriangleIcon, LightBulbIcon, SunIcon, CogIcon, Be
 import { ChevronUpDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 
 
 // --- Type Definitions ---
@@ -19,6 +20,13 @@ type CheckState = Omit<PreTripCheck, 'id' | 'checked_at' | 'truck_id' | 'worker_
 
 type ProfileWithRole = {
     roles: { name: string } | { name: string }[] | null;
+};
+
+// --- NEW: Type for dropdown items with status ---
+type DropdownTruckItem = {
+  id: number;
+  label: string;
+  status: 'checked' | 'unchecked' | 'unscheduled';
 };
 
 
@@ -44,14 +52,14 @@ const defaultCheckState: CheckState = {
   issues_resolved: false,
 };
 
-// --- Searchable Dropdown Component ---
+// --- MODIFIED: Searchable Dropdown Component ---
 const SearchableDropdown = ({
   items,
   selectedValue,
   onSelect,
   placeholder,
 }: {
-  items: { id: number; label: string }[];
+  items: DropdownTruckItem[];
   selectedValue: string;
   onSelect: (value: string) => void;
   placeholder: string;
@@ -102,7 +110,7 @@ const SearchableDropdown = ({
             </div>
           </div>
           <ul>
-            {filteredItems.map(item => (
+            {filteredItems.map((item, index) => (
               <li
                 key={item.id}
                 onClick={() => {
@@ -110,7 +118,13 @@ const SearchableDropdown = ({
                   setIsOpen(false);
                   setSearchTerm('');
                 }}
-                className="px-4 py-2 hover:bg-gray-100 cursor-pointer text-gray-900"
+                className={cn(
+                    "px-4 py-2 hover:bg-gray-100 cursor-pointer text-gray-900 font-medium",
+                    item.status === 'checked' && 'text-green-600',
+                    item.status === 'unchecked' && 'text-red-600',
+                    // Add a separator between scheduled and unscheduled trucks
+                    item.status === 'unscheduled' && filteredItems[index-1]?.status !== 'unscheduled' && 'border-t-2 border-dashed'
+                )}
               >
                 {item.label}
               </li>
@@ -131,6 +145,10 @@ export default function PreTripCheckComponent() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [allTrucks, setAllTrucks] = useState<TruckInfo[]>([]);
   const [selectedTruckId, setSelectedTruckId] = useState<string>('');
+  
+  // --- NEW: State for scheduled and checked trucks ---
+  const [scheduledTruckIds, setScheduledTruckIds] = useState<Set<number>>(new Set());
+  const [checkedTruckIds, setCheckedTruckIds] = useState<Set<number>>(new Set());
 
   const [truck, setTruck] = useState<TruckInfo | null>(null);
   const [worker, setWorker] = useState<WorkerInfo | null>(null);
@@ -153,10 +171,23 @@ export default function PreTripCheckComponent() {
     setError(null);
 
     try {
-        const { data: profileData, error: profileError } = await supabase.from('profiles').select('roles(name)').eq('id', user.id).single();
-        if (profileError) throw new Error("Could not fetch user profile.");
+        const today = new Date().toISOString().split('T')[0];
+
+        // --- NEW: Fetch schedule and check statuses in parallel ---
+        const schedulePromise = supabase.from('weekly_assignments').select('truck_id').eq('assignment_date', today);
+        const checksPromise = supabase.from('pre_trip_checks').select('truck_id').gte('checked_at', `${today}T00:00:00.000Z`).lte('checked_at', `${today}T23:59:59.999Z`);
+        const profilePromise = supabase.from('profiles').select('roles(name)').eq('id', user.id).single();
+
+        const [scheduleRes, checksRes, profileRes] = await Promise.all([schedulePromise, checksPromise, profilePromise]);
+
+        if (scheduleRes.error) throw new Error("Could not fetch today's schedule.");
+        setScheduledTruckIds(new Set(scheduleRes.data.map(a => a.truck_id)));
         
-        const typedProfile = profileData as ProfileWithRole;
+        if (checksRes.error) throw new Error("Could not fetch today's checks.");
+        setCheckedTruckIds(new Set(checksRes.data.map(c => c.truck_id)));
+
+        if (profileRes.error) throw new Error("Could not fetch user profile.");
+        const typedProfile = profileRes.data as ProfileWithRole;
         const roleRelation = typedProfile.roles;
         const roleName = Array.isArray(roleRelation) ? roleRelation[0]?.name : roleRelation?.name;
         setUserRole(roleName || null);
@@ -326,7 +357,10 @@ export default function PreTripCheckComponent() {
         if (insertError) throw insertError;
         setStatusMessage("Checklist submitted successfully!");
       }
-      // Refresh data
+      
+      await fetchInitialData(); // Full refresh to update schedule/check status
+      
+      // Keep the form visible but reset state
       const currentTruckId = selectedTruckId;
       setSelectedTruckId('');
       setSelectedTruckId(currentTruckId);
@@ -350,9 +384,32 @@ export default function PreTripCheckComponent() {
       return `${issues.length} issue(s) reported`;
   }
   
-  const truckItemsForDropdown = useMemo(() => 
-      allTrucks.map(t => ({ id: t.id, label: `${t.license_plate} (${t.make} ${t.model})` })),
-  [allTrucks]);
+  const truckItemsForDropdown = useMemo(() => {
+    const scheduled: DropdownTruckItem[] = [];
+    const unscheduled: DropdownTruckItem[] = [];
+
+    for (const truck of allTrucks) {
+        const item = {
+            id: truck.id,
+            label: `${truck.license_plate} (${truck.make} ${truck.model})`,
+            status: 'unscheduled' as DropdownTruckItem['status'],
+        };
+        if (scheduledTruckIds.has(truck.id)) {
+            item.status = checkedTruckIds.has(truck.id) ? 'checked' : 'unchecked';
+            scheduled.push(item);
+        } else {
+            unscheduled.push(item);
+        }
+    }
+
+    scheduled.sort((a, b) => {
+        if (a.status === 'unchecked' && b.status !== 'unchecked') return -1;
+        if (a.status !== 'unchecked' && b.status === 'unchecked') return 1;
+        return a.label.localeCompare(b.label);
+    });
+    
+    return [...scheduled, ...unscheduled];
+  }, [allTrucks, scheduledTruckIds, checkedTruckIds]);
 
 
   if (loading) return <div className="p-4 text-center font-semibold">Loading your details...</div>;
@@ -379,6 +436,17 @@ export default function PreTripCheckComponent() {
           <h1 className="text-xl font-bold text-gray-800 mt-1">{isEditing ? "Edit Today's Check" : "Pre-Trip Vehicle Check"}</h1>
           {isPrivilegedUser ? (
               <div className="max-w-sm mx-auto mt-2">
+                 {/* --- NEW: Legend for Check-in Status --- */}
+                <div className="flex items-center justify-center gap-4 text-xs text-gray-500 mb-2">
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                        <span>Checked</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                        <span>Needs Check</span>
+                    </div>
+                </div>
                 <SearchableDropdown
                     items={truckItemsForDropdown}
                     selectedValue={selectedTruckId}

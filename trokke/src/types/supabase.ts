@@ -102,21 +102,30 @@ export type Database = {
       diesel_purchases: {
         Row: {
           id: number
+          is_active: boolean | null
+          is_empty: boolean | null
           liters: number
           price_per_liter: number
           purchase_date: string
+          spillage_liters: number | null
         }
         Insert: {
           id?: number
+          is_active?: boolean | null
+          is_empty?: boolean | null
           liters: number
           price_per_liter: number
           purchase_date?: string
+          spillage_liters?: number | null
         }
         Update: {
           id?: number
+          is_active?: boolean | null
+          is_empty?: boolean | null
           liters?: number
           price_per_liter?: number
           purchase_date?: string
+          spillage_liters?: number | null
         }
         Relationships: []
       }
@@ -652,6 +661,106 @@ export type Database = {
           },
         ]
       }
+      weekly_assignment_assistants: {
+        Row: {
+          assignment_id: number
+          worker_id: number
+        }
+        Insert: {
+          assignment_id: number
+          worker_id: number
+        }
+        Update: {
+          assignment_id?: number
+          worker_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_assignment_assistants_assignment_id_fkey"
+            columns: ["assignment_id"]
+            isOneToOne: false
+            referencedRelation: "weekly_assignments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weekly_assignment_assistants_worker_id_fkey"
+            columns: ["worker_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      weekly_assignments: {
+        Row: {
+          activity_type: Database["public"]["Enums"]["assignment_activity_type"]
+          assignment_date: string
+          created_at: string
+          destination: string | null
+          driver_id: number | null
+          end_hour: number | null
+          id: number
+          notes: string | null
+          start_hour: number | null
+          trip_name: string | null
+          truck_id: number
+          updated_at: string
+          week_start_date: string
+        }
+        Insert: {
+          activity_type?: Database["public"]["Enums"]["assignment_activity_type"]
+          assignment_date: string
+          created_at?: string
+          destination?: string | null
+          driver_id?: number | null
+          end_hour?: number | null
+          id?: number
+          notes?: string | null
+          start_hour?: number | null
+          trip_name?: string | null
+          truck_id: number
+          updated_at?: string
+          week_start_date: string
+        }
+        Update: {
+          activity_type?: Database["public"]["Enums"]["assignment_activity_type"]
+          assignment_date?: string
+          created_at?: string
+          destination?: string | null
+          driver_id?: number | null
+          end_hour?: number | null
+          id?: number
+          notes?: string | null
+          start_hour?: number | null
+          trip_name?: string | null
+          truck_id?: number
+          updated_at?: string
+          week_start_date?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "weekly_assignments_driver_id_fkey"
+            columns: ["driver_id"]
+            isOneToOne: false
+            referencedRelation: "workers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "weekly_assignments_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "monthly_truck_analytics"
+            referencedColumns: ["truck_id"]
+          },
+          {
+            foreignKeyName: "weekly_assignments_truck_id_fkey"
+            columns: ["truck_id"]
+            isOneToOne: false
+            referencedRelation: "trucks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       worker_name_aliases: {
         Row: {
           alias_name: string
@@ -822,6 +931,13 @@ export type Database = {
       }
     }
     Enums: {
+      assignment_activity_type:
+        | "Delivery"
+        | "Collection"
+        | "Service"
+        | "Out of Action"
+        | "Relocation"
+        | "Other"
       truck_status: "active" | "inactive" | "under_service" | "decommissioned"
       user_role:
         | "admin"
@@ -958,6 +1074,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      assignment_activity_type: [
+        "Delivery",
+        "Collection",
+        "Service",
+        "Out of Action",
+        "Relocation",
+        "Other",
+      ],
       truck_status: ["active", "inactive", "under_service", "decommissioned"],
       user_role: [
         "admin",

@@ -266,10 +266,11 @@ export default function TrucksPage() {
                 </Dialog>
             </div>
         </div>
-
-        <AnalyticsCard onRecalculate={triggerRefresh} setNotification={setNotification} />
         
-        <FilterBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} filters={filters} setFilters={setFilters} />
+        <div>
+            <h3 className="text-xl font-semibold text-gray-800 mb-2">Filter Fleet</h3>
+            <FilterBar searchTerm={searchTerm} setSearchTerm={setSearchTerm} filters={filters} setFilters={setFilters} />
+        </div>
 
         <div className="space-y-6">
             <TruckCategorySection title="Needs Attention" trucks={categorizedTrucks['needs attention']} onDelete={promptForDelete} onUpdateCategory={handleUpdateTruckCategory} />
@@ -459,88 +460,6 @@ function ImportServicesModal({ onServicesImported, closeModal, setNotification }
     );
 }
 
-// --- Analytics Card Component ---
-function AnalyticsCard({ onRecalculate, setNotification }: { onRecalculate: () => void, setNotification: (notif: { title: string; message: string }) => void }) {
-    const [startDate, setStartDate] = useState('')
-    const [endDate, setEndDate] = useState('')
-    const [isRecalculating, setIsRecalculating] = useState(false)
-    const supabase = createClient()
-
-    const handleRecalculate = async () => {
-        if (!startDate || !endDate) {
-            setNotification({ title: 'Input Required', message: 'Please select a start and end date.' });
-            return;
-        }
-
-        setIsRecalculating(true);
-        try {
-            const { data, error } = await supabase.functions.invoke<{ message: string }>('update-truck-analytics', {
-                body: { start_date: startDate, end_date: endDate },
-            });
-
-            if (error) throw error;
-
-            setNotification({ title: 'Success', message: data?.message || 'Averages have been recalculated!' });
-            onRecalculate();
-        } catch (error: unknown) {
-            console.error('Error recalculating analytics:', error);
-            let message = 'An unknown error occurred';
-            if (error instanceof Error) {
-                message = error.message;
-            } else if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as { message: unknown }).message === 'string') {
-                message = (error as { message: string }).message;
-            }
-            setNotification({ title: 'Recalculation Failed', message });
-        } finally {
-            setIsRecalculating(false);
-        }
-    };
-
-    const handleNeedsAttention = async () => {
-        try {
-            const { error } = await supabase.rpc('update_trucks_needs_attention');
-            if (error) throw error;
-            setNotification({ title: 'Success', message: 'Trucks needing attention have been updated.' });
-            onRecalculate();
-        } catch (error) {
-            console.error('Error updating trucks needing attention:', error);
-            setNotification({ title: 'Error', message: 'Failed to update trucks needing attention.' });
-        }
-    }
-
-    return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="text-gray-900">Fleet Analytics</CardTitle>
-                <CardDescription className="text-gray-600">Recalculate average consumption for the fleet over a selected period.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col sm:flex-row gap-4 items-center">
-                <div>
-                    <Label htmlFor="start-date" className="text-gray-700">Start Date</Label>
-                    <Input id="start-date" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-white border-gray-300 text-gray-900" />
-                </div>
-                <div>
-                    <Label htmlFor="end-date" className="text-gray-700">End Date</Label>
-                    <Input id="end-date" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-white border-gray-300 text-gray-900" />
-                </div>
-                <Button onClick={handleRecalculate} disabled={isRecalculating} className="mt-4 sm:mt-0 self-start sm:self-end bg-green-600 hover:bg-green-700 text-white min-w-[180px]">
-                    {isRecalculating ? (
-                        <div className="flex items-center justify-center">
-                            <ArrowPathIcon className="animate-spin h-5 w-5 mr-2" />
-                            <span>Recalculating...</span>
-                        </div>
-                    ) : (
-                        'Recalculate Averages'
-                    )}
-                </Button>
-                <Button onClick={handleNeedsAttention} className="mt-4 sm:mt-0 self-start sm:self-end bg-yellow-500 hover:bg-yellow-600 text-white min-w-[180px]">
-                    Check for Incomplete Data
-                </Button>
-            </CardContent>
-        </Card>
-    );
-}
-
 // --- Filter Bar Component ---
 interface FilterBarProps {
     searchTerm: string;
@@ -565,7 +484,7 @@ function FilterBar({ searchTerm, setSearchTerm, filters, setFilters }: FilterBar
                 />
                 <Select value={filters.category} onValueChange={(value) => handleFilterChange('category', value)}>
                     <SelectTrigger className="bg-white border-gray-300 text-gray-900"><SelectValue placeholder="All Categories" /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-white text-black">
                         <SelectItem value="all">All Categories</SelectItem>
                         <SelectItem value="30 palette">30 Palette</SelectItem>
                         <SelectItem value="16 palette">16 Palette</SelectItem>
