@@ -17,7 +17,6 @@ import {
   TableCellsIcon,
   ChartBarIcon,
   BeakerIcon,
-  ShieldCheckIcon,
   ClipboardDocumentListIcon,
   ChevronDownIcon,
   UserCircleIcon,
@@ -50,8 +49,8 @@ const floorManagerPlannerLink: NavLink = { href: "/floor-manager/planner", label
 const adminDayToDayLinks: NavLink[] = [
   { href: "/admin/trucks", label: "Fleet Overview", icon: ChartPieIcon },
   { href: "/admin/planner", label: "Weekly Planner", icon: CalendarDaysIcon },
+  { href: "/admin/workers", label: "Manage Users", icon: UsersIcon },
   { href: "/admin/diesel", label: "Diesel Tank", icon: BeakerIcon },
-  { href: "/admin/manage-roles", label: "Manage Roles", icon: ShieldCheckIcon },
   { href: "/admin/services", label: "Service Records", icon: WrenchScrewdriverIcon },
 ];
 
@@ -63,7 +62,6 @@ const adminAnalyticsLinks: NavLink[] = [
 const adminListsLinks: NavLink[] = [
     { href: "/admin/trips", label: "Refuels", icon: MapPinIcon },
     { href: "/admin/check-ins", label: "Check-ins", icon: ClipboardDocumentListIcon },
-    { href: "/admin/workers", label: "Workers", icon: UsersIcon },
     { href: "/admin/link-workers", label: "Link Workers", icon: LinkIconSolid },
 ];
 

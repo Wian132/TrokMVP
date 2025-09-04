@@ -276,78 +276,6 @@ export type Database = {
           },
         ]
       }
-      refueler_logs: {
-        Row: {
-          id: number
-          liters_filled: number
-          notes: string | null
-          odo_reading: number
-          refuel_date: string
-          refueler_profile_id: string | null
-          tank_id: number | null
-          truck_id: number
-          worker_id: number
-        }
-        Insert: {
-          id?: never
-          liters_filled: number
-          notes?: string | null
-          odo_reading: number
-          refuel_date?: string
-          refueler_profile_id?: string | null
-          tank_id?: number | null
-          truck_id: number
-          worker_id: number
-        }
-        Update: {
-          id?: never
-          liters_filled?: number
-          notes?: string | null
-          odo_reading?: number
-          refuel_date?: string
-          refueler_profile_id?: string | null
-          tank_id?: number | null
-          truck_id?: number
-          worker_id?: number
-        }
-        Relationships: [
-          {
-            foreignKeyName: "refueler_logs_refueler_profile_id_fkey"
-            columns: ["refueler_profile_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "refueler_logs_tank_id_fkey"
-            columns: ["tank_id"]
-            isOneToOne: false
-            referencedRelation: "diesel_purchases"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "refueler_logs_truck_id_fkey"
-            columns: ["truck_id"]
-            isOneToOne: false
-            referencedRelation: "monthly_truck_analytics"
-            referencedColumns: ["truck_id"]
-          },
-          {
-            foreignKeyName: "refueler_logs_truck_id_fkey"
-            columns: ["truck_id"]
-            isOneToOne: false
-            referencedRelation: "trucks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "refueler_logs_worker_id_fkey"
-            columns: ["worker_id"]
-            isOneToOne: false
-            referencedRelation: "workers"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       role_permissions: {
         Row: {
           id: number
@@ -502,61 +430,103 @@ export type Database = {
         Row: {
           comments: string | null
           created_at: string
+          dispensed_by_profile_id: string | null
           expense_amount: number | null
           expense_date: string | null
+          fuel_pump_image_url: string | null
           id: number
           is_hours_based: boolean | null
           km_per_liter: number | null
           liters_filled: number | null
           next_service_km: number | null
           notes: string | null
+          odometer_image_url: string | null
           opening_km: number | null
+          refueler_profile_id: string | null
+          route: string | null
           supplier: string | null
+          tank_id: number | null
           total_km: number | null
           trip_date: string | null
           truck_id: number
+          vehicle_reg_no_image_url: string | null
           worker_id: number | null
           worker_name: string | null
         }
         Insert: {
           comments?: string | null
           created_at?: string
+          dispensed_by_profile_id?: string | null
           expense_amount?: number | null
           expense_date?: string | null
+          fuel_pump_image_url?: string | null
           id?: number
           is_hours_based?: boolean | null
           km_per_liter?: number | null
           liters_filled?: number | null
           next_service_km?: number | null
           notes?: string | null
+          odometer_image_url?: string | null
           opening_km?: number | null
+          refueler_profile_id?: string | null
+          route?: string | null
           supplier?: string | null
+          tank_id?: number | null
           total_km?: number | null
           trip_date?: string | null
           truck_id: number
+          vehicle_reg_no_image_url?: string | null
           worker_id?: number | null
           worker_name?: string | null
         }
         Update: {
           comments?: string | null
           created_at?: string
+          dispensed_by_profile_id?: string | null
           expense_amount?: number | null
           expense_date?: string | null
+          fuel_pump_image_url?: string | null
           id?: number
           is_hours_based?: boolean | null
           km_per_liter?: number | null
           liters_filled?: number | null
           next_service_km?: number | null
           notes?: string | null
+          odometer_image_url?: string | null
           opening_km?: number | null
+          refueler_profile_id?: string | null
+          route?: string | null
           supplier?: string | null
+          tank_id?: number | null
           total_km?: number | null
           trip_date?: string | null
           truck_id?: number
+          vehicle_reg_no_image_url?: string | null
           worker_id?: number | null
           worker_name?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "truck_trips_dispensed_by_profile_id_fkey"
+            columns: ["dispensed_by_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "truck_trips_refueler_profile_id_fkey"
+            columns: ["refueler_profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "truck_trips_tank_id_fkey"
+            columns: ["tank_id"]
+            isOneToOne: false
+            referencedRelation: "diesel_purchases"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "truck_trips_truck_id_fkey"
             columns: ["truck_id"]
@@ -899,6 +869,26 @@ export type Database = {
       get_my_role: {
         Args: Record<PropertyKey, never>
         Returns: string
+      }
+      get_superadmin_dashboard_metrics: {
+        Args: Record<PropertyKey, never>
+        Returns: {
+          active_trucks: number
+          avg_cost_per_km: number
+          inactive_trucks: number
+          overall_kml: number
+          role_breakdown: Json
+          total_checks: number
+          total_diesel_cost: number
+          total_km_traveled: number
+          total_liters_fueled: number
+          total_refuels: number
+          total_service_cost: number
+          total_spillage: number
+          total_trips: number
+          total_trucks: number
+          total_workers: number
+        }[]
       }
       get_truck_details_with_analytics: {
         Args: Record<PropertyKey, never>

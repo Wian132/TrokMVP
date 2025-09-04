@@ -1,3 +1,4 @@
+// src/app/(shell)/admin/diesel/page.tsx
 'use client';
 
 import { useEffect, useState, useCallback, useMemo } from 'react';
@@ -57,7 +58,8 @@ export default function DieselPage() {
         setError(null);
 
         const purchasesPromise = supabase.from('diesel_purchases').select('*').order('purchase_date', { ascending: false });
-        const refuelsPromise = supabase.from('refueler_logs').select('liters_filled, tank_id');
+        // Corrected: Fetch refuel data from the unified truck_trips table
+        const refuelsPromise = supabase.from('truck_trips').select('liters_filled, tank_id');
         const tripsPromise = supabase.from('truck_trips').select('*');
 
         const [purchasesResult, refuelsResult, tripsResult] = await Promise.all([purchasesPromise, refuelsPromise, tripsPromise]);
@@ -69,7 +71,7 @@ export default function DieselPage() {
         }
 
         const refuelsByTank = (refuelsResult.data || []).reduce((acc, r) => {
-            if (r.tank_id) acc[r.tank_id] = (acc[r.tank_id] || 0) + (r.liters_filled || 0);
+            if (r.tank_id && r.liters_filled) acc[r.tank_id] = (acc[r.tank_id] || 0) + r.liters_filled;
             return acc;
         }, {} as Record<number, number>);
 
@@ -196,7 +198,7 @@ export default function DieselPage() {
                                     <div><Label htmlFor="purchase_date" className="text-gray-700 font-semibold">Purchase Date</Label><Input type="date" name="purchase_date" id="purchase_date" value={newPurchase.purchase_date} onChange={(e) => setNewPurchase(p => ({...p, purchase_date: e.target.value}))} className="bg-white text-black" required /></div>
                                     <div><Label htmlFor="liters" className="text-gray-700 font-semibold">Liters</Label><Input type="number" name="liters" id="liters" value={newPurchase.liters} onChange={(e) => setNewPurchase(p => ({...p, liters: e.target.value}))} className="bg-white text-black" placeholder="e.g., 10000" required /></div>
                                     <div><Label htmlFor="price_per_liter" className="text-gray-700 font-semibold">Price Per Liter (R)</Label><Input type="number" name="price_per_liter" id="price_per_liter" value={newPurchase.price_per_liter} onChange={(e) => setNewPurchase(p => ({...p, price_per_liter: e.target.value}))} className="bg-white text-black" placeholder="e.g., 20.00" step="0.01" required /></div>
-                                    <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-700"><PlusCircleIcon className="mr-2 h-4 w-4" />Add Purchase</Button>
+                                    <Button type="submit" className="w-full bg-green-600 hover:bg-green-700"><PlusCircleIcon className="mr-2 h-4 w-4" />Add Purchase</Button>
                                 </form>
                             </CardContent>
                         </Card>
@@ -276,7 +278,7 @@ export default function DieselPage() {
                             {currentActivePurchase ? (
                                 <>
                                     <Button variant="outline" onClick={() => handleSetActive(false)}>No, Keep Remainder</Button>
-                                    <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => handleSetActive(true)}>Yes, It&apos;s Empty</Button>
+                                    <Button className="bg-green-600 hover:bg-green-700" onClick={() => handleSetActive(true)}>Yes, It&apos;s Empty</Button>
                                 </>
                             ) : (
                                 <>
@@ -297,7 +299,7 @@ export default function DieselPage() {
                             <div><Label htmlFor="edit_date">Date</Label><Input id="edit_date" type="date" name="purchase_date" value={editingPurchase?.purchase_date?.split('T')[0] || ''} onChange={(e) => setEditingPurchase(p => p ? {...p, purchase_date: e.target.value} : null)} className="bg-white text-black border-gray-300" /></div>
                             <div><Label htmlFor="edit_liters">Liters</Label><Input id="edit_liters" type="number" name="liters" value={editingPurchase?.liters || ''} onChange={(e) => setEditingPurchase(p => p ? {...p, liters: Number(e.target.value)}: null)} className="bg-white text-black border-gray-300" /></div>
                             <div><Label htmlFor="edit_price">Price/L</Label><Input id="edit_price" type="number" name="price_per_liter" value={editingPurchase?.price_per_liter || ''} step="0.01" onChange={(e) => setEditingPurchase(p => p ? {...p, price_per_liter: Number(e.target.value)}: null)} className="bg-white text-black border-gray-300" /></div>
-                            <DialogFooter><Button type="button" variant="ghost" onClick={() => setEditingPurchase(null)}>Cancel</Button><Button type="submit">Save</Button></DialogFooter>
+                            <DialogFooter><Button type="button" variant="ghost" onClick={() => setEditingPurchase(null)}>Cancel</Button><Button type="submit" className="bg-green-600 hover:bg-green-700">Save</Button></DialogFooter>
                         </form>
                     </DialogContent>
                 </Dialog>
@@ -307,7 +309,10 @@ export default function DieselPage() {
                 <Dialog open onOpenChange={() => setDeletingPurchase(null)}>
                     <DialogContent className="bg-white text-black">
                         <DialogHeader><DialogTitle>Confirm Deletion</DialogTitle><DialogDescription>Are you sure you want to delete this purchase?</DialogDescription></DialogHeader>
-                        <DialogFooter><Button variant="ghost" onClick={() => setDeletingPurchase(null)}>Cancel</Button><Button variant="destructive" onClick={handleDeletePurchase}>Delete</Button></DialogFooter>
+                        <DialogFooter>
+                            <Button variant="ghost" onClick={() => setDeletingPurchase(null)}>Cancel</Button>
+                            <Button variant="destructive" onClick={handleDeletePurchase}>Delete</Button>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             )}
