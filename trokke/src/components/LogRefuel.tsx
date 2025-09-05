@@ -5,10 +5,11 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useAuth } from '@/components/AuthContext';
 import { type Database } from '@/types/supabase';
-import { BeakerIcon, BookOpenIcon, PlusCircleIcon, PencilIcon } from '@heroicons/react/24/outline';
+import { BeakerIcon, BookOpenIcon, PlusCircleIcon, PencilIcon, InformationCircleIcon, ArrowLeftIcon, ArrowRightIcon } from '@heroicons/react/24/outline';
 import { ChevronUpDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/solid';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 
 // --- Type Definitions ---
 type TruckInfo = { id: number; license_plate: string; make: string | null; model: string | null; active_driver_id: number | null; current_odo: number | null };
@@ -19,6 +20,10 @@ type TripWithDetails = Trip & {
   trucks: { license_plate: string } | null;
   profiles: { full_name: string } | null;
 };
+type ActiveTank = { id: number; price_per_liter: number; remaining_liters: number } | null;
+
+const REFUELS_PER_PAGE = 5;
+
 
 // --- Searchable Dropdown Component ---
 const SearchableDropdown = ({ items, selectedValue, onSelect, placeholder, disabled = false, }: { items: { id: string | number; label: string }[], selectedValue: string, onSelect: (value: string) => void, placeholder: string, disabled?: boolean }) => {
@@ -77,6 +82,7 @@ export default function LogRefuelComponent() {
     const [truck, setTruck] = useState<TruckInfo | null>(null);
     const [todaysLog, setTodaysLog] = useState<Trip | null>(null);
     const [globalRecentLogs, setGlobalRecentLogs] = useState<TripWithDetails[]>([]);
+    const [activeTank, setActiveTank] = useState<ActiveTank>(null);
     
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -92,12 +98,14 @@ export default function LogRefuelComponent() {
     const [vehicleRegNoFile, setVehicleRegNoFile] = useState<File | null>(null);
     const [odometerFile, setOdometerFile] = useState<File | null>(null);
     const [fuelPumpFile, setFuelPumpFile] = useState<File | null>(null);
+    
+    const [currentPage, setCurrentPage] = useState(1);
 
     const isEditing = !!todaysLog;
 
     const fetchGlobalRecentLogs = useCallback(async () => {
-        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const { data, error } = await supabase.from('truck_trips').select(`*, trucks(license_plate), profiles!truck_trips_refueler_profile_id_fkey(full_name)`).gte('created_at', twentyFourHoursAgo).order('created_at', { ascending: false });
+        const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase.from('truck_trips').select(`*, trucks(license_plate), profiles!truck_trips_refueler_profile_id_fkey(full_name)`).gte('created_at', sevenDaysAgo).order('created_at', { ascending: false });
         if (error) {
             console.error("Error fetching global refuel history:", error);
             setError("Could not load recent refuel history.");
@@ -114,8 +122,10 @@ export default function LogRefuelComponent() {
             const trucksPromise = supabase.from('trucks').select('id, license_plate, make, model, active_driver_id, current_odo').order('license_plate');
             const workersPromise = supabase.from('workers').select('id, profiles(full_name)').order('id');
             const adminsPromise = supabase.from('profiles').select('id, full_name, roles!inner(name)').in('roles.name', ['Admin', 'SuperAdmin']);
+            const activeTankPromise = supabase.from('diesel_purchases').select('id, price_per_liter, liters').eq('is_active', true).single();
 
-            const [trucksResult, workersResult, adminsResult] = await Promise.all([trucksPromise, workersPromise, adminsPromise]);
+
+            const [trucksResult, workersResult, adminsResult, activeTankResult] = await Promise.all([trucksPromise, workersPromise, adminsPromise, activeTankPromise]);
             if (trucksResult.error) throw new Error("Could not fetch truck list.");
             setAllTrucks(trucksResult.data || []);
             if (workersResult.error) throw new Error("Could not fetch worker list.");
@@ -124,6 +134,21 @@ export default function LogRefuelComponent() {
 
             if (adminsResult.error) throw new Error("Could not fetch admin list.");
             setAdminUsers(adminsResult.data.map(a => ({ id: a.id, fullName: a.full_name })));
+            
+            if (activeTankResult.error) {
+                console.warn("Could not fetch active diesel tank. Expense tracking will be disabled.", activeTankResult.error);
+                setActiveTank(null);
+            } else if (activeTankResult.data) {
+                const tank = activeTankResult.data;
+                const { data: usedLitersData } = await supabase.from('truck_trips').select('liters_filled').eq('tank_id', tank.id);
+                const totalUsed = (usedLitersData || []).reduce((sum, trip) => sum + (trip.liters_filled || 0), 0);
+                setActiveTank({
+                    id: tank.id,
+                    price_per_liter: tank.price_per_liter,
+                    remaining_liters: tank.liters - totalUsed,
+                });
+            }
+
 
             await fetchGlobalRecentLogs();
         } catch (err: unknown) {
@@ -182,11 +207,15 @@ export default function LogRefuelComponent() {
         e.preventDefault();
         setError(null); setStatusMessage(null);
         if (!truck || !selectedWorkerId) { setError("Missing truck or driver information."); return; }
+        if (!activeTank) { setError("There is no active diesel tank set in the system. Please contact an administrator."); return; }
+
         const odoFloat = parseFloat(odoReading);
         const litersFloat = parseFloat(litersFilled);
+
         if (isNaN(odoFloat) || odoFloat <= 0) { setError("Please enter a valid odometer reading."); return; }
         if (lastOdoReading && odoFloat < lastOdoReading) { setError(`New odometer reading (${odoFloat}) cannot be less than the last reading (${lastOdoReading}).`); return; }
         if (isNaN(litersFloat) || litersFloat <= 0) { setError("Please enter a valid value for liters refueled."); return; }
+
         setStatusMessage(isEditing ? "Updating trip log..." : "Submitting trip log...");
 
         try {
@@ -196,6 +225,8 @@ export default function LogRefuelComponent() {
                 uploadFile(fuelPumpFile, 'refuel_fuel_pump_readings'),
             ]);
 
+            const calculatedExpense = litersFloat * activeTank.price_per_liter;
+
             const payload: Partial<Trip> = {
                 opening_km: odoFloat,
                 liters_filled: litersFloat,
@@ -204,6 +235,9 @@ export default function LogRefuelComponent() {
                 worker_id: parseInt(selectedWorkerId),
                 route,
                 dispensed_by_profile_id: dispensedById || null,
+                tank_id: activeTank.id,
+                expense_amount: calculatedExpense,
+                expense_date: new Date().toISOString(),
                 ...(vehicleRegNoImageUrl && { vehicle_reg_no_image_url: vehicleRegNoImageUrl }),
                 ...(odometerImageUrl && { odometer_image_url: odometerImageUrl }),
                 ...(fuelPumpImageUrl && { fuel_pump_image_url: fuelPumpImageUrl }),
@@ -218,8 +252,10 @@ export default function LogRefuelComponent() {
                 if (insertError) throw insertError;
                 setStatusMessage("Refuel logged successfully!");
             }
-            await fetchGlobalRecentLogs();
-            const currentTruckId = selectedTruckId; setSelectedTruckId(''); setSelectedTruckId(currentTruckId);
+            
+            // --- MODIFIED: Refresh page on success ---
+            window.location.reload();
+            
         } catch (err) {
             setError(err instanceof Error ? `Submission failed: ${err.message}` : "An unknown error occurred during submission.");
             setStatusMessage(null);
@@ -229,6 +265,14 @@ export default function LogRefuelComponent() {
     const truckItemsForDropdown = useMemo(() => allTrucks.map(t => ({ id: t.id, label: `${t.license_plate} (${t.make} ${t.model})` })), [allTrucks]);
     const workerItemsForDropdown = useMemo(() => allWorkers.map(w => ({ id: w.id, label: w.fullName || `Worker #${w.id}` })), [allWorkers]);
     const adminItemsForDropdown = useMemo(() => adminUsers.map(a => ({ id: a.id, label: a.fullName || `Admin User` })), [adminUsers]);
+    
+    const paginatedLogs = useMemo(() => {
+        const startIndex = (currentPage - 1) * REFUELS_PER_PAGE;
+        return globalRecentLogs.slice(startIndex, startIndex + REFUELS_PER_PAGE);
+    }, [globalRecentLogs, currentPage]);
+
+    const totalPages = Math.ceil(globalRecentLogs.length / REFUELS_PER_PAGE);
+
 
     if (loading) return <div className="p-4 text-center">Loading...</div>;
 
@@ -241,6 +285,27 @@ export default function LogRefuelComponent() {
                         <div><h1 className="text-xl font-bold text-gray-800">{isEditing ? "Edit Today's Log" : "Log New Refuel"}</h1></div>
                     </div>
                 </div>
+
+                {activeTank ? (
+                    <div className="mb-4 p-3 bg-blue-50 border-l-4 border-blue-400 text-blue-800 rounded-r-lg">
+                        <p className="font-bold flex items-center gap-2">
+                            <InformationCircleIcon className="h-5 w-5" />
+                            Active Tank Information
+                        </p>
+                        <p className="text-sm mt-1">
+                            Current Price: <strong>R {activeTank.price_per_liter.toFixed(2)} / L</strong>
+                        </p>
+                         <p className="text-sm">
+                            Remaining in Tank: <strong>{activeTank.remaining_liters.toLocaleString(undefined, {maximumFractionDigits: 2})} L</strong>
+                        </p>
+                    </div>
+                ) : (
+                    <div className="mb-4 p-3 bg-red-50 border-l-4 border-red-400 text-red-800 rounded-r-lg">
+                        <p className="font-bold">No Active Tank</p>
+                        <p className="text-sm mt-1">Cannot log refuels. Please ask an admin to set an active diesel tank.</p>
+                    </div>
+                )}
+
 
                 {statusMessage && <p className="mb-4 text-center text-sm text-green-600 bg-green-50 p-3 rounded-md">{statusMessage}</p>}
                 {error && <p className="mb-4 text-center text-sm text-red-600 bg-red-50 p-3 rounded-md">{error}</p>}
@@ -267,7 +332,18 @@ export default function LogRefuelComponent() {
                         </div>
                         <div>
                             <Label htmlFor="liters_filled" className="block text-sm font-medium text-gray-700">Liters Refueled</Label>
-                            <Input id="liters_filled" type="number" step="0.01" placeholder="0.00" value={litersFilled} onChange={(e) => setLitersFilled(e.target.value)} required className="mt-1 w-full p-2 border rounded-md text-gray-900 shadow-sm bg-white" />
+                            <Input 
+                                id="liters_filled" 
+                                type="number" 
+                                step="0.01" 
+                                placeholder="0.00" 
+                                value={litersFilled} 
+                                onChange={(e) => setLitersFilled(e.target.value)} 
+                                required 
+                                className="mt-1 w-full p-2 border rounded-md text-gray-900 shadow-sm bg-white" 
+                                // --- MODIFIED: Disable mouse wheel scroll ---
+                                onWheel={(e) => e.currentTarget.blur()}
+                            />
                         </div>
                         <div>
                             <Label className="block text-sm font-medium text-gray-700">Dispensed By</Label>
@@ -290,7 +366,7 @@ export default function LogRefuelComponent() {
                             <Label htmlFor="notes" className="block text-sm font-medium text-gray-700">Notes (Optional)</Label>
                             <textarea id="notes" value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} className="mt-1 w-full p-2 border rounded-md text-gray-900 shadow-sm" placeholder="e.g., Refueled at Shell, etc." />
                         </div>
-                        <button type="submit" className="w-full flex justify-center items-center gap-2 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-bold text-base disabled:bg-indigo-300">
+                        <button type="submit" className="w-full flex justify-center items-center gap-2 bg-indigo-600 text-white py-2.5 rounded-lg hover:bg-indigo-700 font-bold text-base disabled:bg-indigo-300" disabled={!activeTank}>
                             {isEditing ? <PencilIcon className="h-5 w-5"/> : <PlusCircleIcon className="h-5 w-5"/>}
                             {isEditing ? "Update Refuel Log" : "Submit Refuel Log"}
                         </button>
@@ -299,7 +375,7 @@ export default function LogRefuelComponent() {
                 </form>
             </div>
             <div className="bg-white p-6 rounded-lg shadow-md">
-                <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><BookOpenIcon className="h-6 w-6 text-indigo-600"/>Recent Refuel History (Last 24 Hours)</h2>
+                <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2"><BookOpenIcon className="h-6 w-6 text-indigo-600"/>Recent Refuel History (Last 7 Days)</h2>
                 <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200">
                         <thead className="bg-gray-50">
@@ -311,21 +387,36 @@ export default function LogRefuelComponent() {
                             </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-gray-200">
-                            {globalRecentLogs.length > 0 ? globalRecentLogs.map(log => (
+                            {paginatedLogs.length > 0 ? paginatedLogs.map(log => (
                                 <tr key={log.id}>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{new Date(log.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-800">{log.trucks?.license_plate || 'N/A'}</td>
                                     <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">{log.profiles?.full_name || 'N/A'}</td>
-                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 text-right">{log.liters_filled!.toLocaleString()} L</td>
+                                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600 text-right">
+                                        {log.liters_filled ? `${log.liters_filled.toLocaleString()} L` : '-'}
+                                    </td>
                                 </tr>
                             )) : (
                                 <tr>
-                                    <td colSpan={4} className="text-center py-4 text-sm text-gray-500">No refuels logged in the last 24 hours.</td>
+                                    <td colSpan={4} className="text-center py-4 text-sm text-gray-500">No refuels logged in the last 7 days.</td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
                 </div>
+                {totalPages > 1 && (
+                    <div className="mt-4 flex justify-between items-center">
+                        <Button onClick={() => setCurrentPage(p => Math.max(1, p - 1))} disabled={currentPage === 1} variant="outline">
+                            <ArrowLeftIcon className="h-4 w-4 mr-2" /> Previous
+                        </Button>
+                        <span className="text-sm text-gray-700">
+                            Page {currentPage} of {totalPages}
+                        </span>
+                        <Button onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} disabled={currentPage === totalPages} variant="outline">
+                            Next <ArrowRightIcon className="h-4 w-4 ml-2" />
+                        </Button>
+                    </div>
+                )}
             </div>
         </div>
     );

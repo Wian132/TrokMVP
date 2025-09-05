@@ -330,9 +330,11 @@ function ImportTripsModal({ onTripsImported, closeModal, setNotification }: { on
         formData.append('file', fileInputRef.current.files[0]);
 
         try {
+            // FIX: Added cache: 'no-store' to prevent caching and ensure logging.
             const response = await fetch('/api/import-actions', {
                 method: 'POST',
                 body: formData,
+                cache: 'no-store', 
             });
             const result = await response.json();
             
@@ -354,10 +356,11 @@ function ImportTripsModal({ onTripsImported, closeModal, setNotification }: { on
     };
 
     return (
-        <DialogContent>
+        // FIX: Added classes for a solid white background and black text.
+        <DialogContent className="bg-white text-black">
             <DialogHeader>
                 <DialogTitle>Import Trip Data</DialogTitle>
-                <DialogDescription>
+                <DialogDescription className="text-gray-600">
                     Upload an Excel file to import trip histories for your vehicles. This will add new trips without creating new vehicles.
                 </DialogDescription>
             </DialogHeader>
@@ -403,9 +406,11 @@ function ImportServicesModal({ onServicesImported, closeModal, setNotification }
         formData.append('file', fileInputRef.current.files[0]);
 
         try {
+            // FIX: Added cache: 'no-store' to prevent caching and ensure logging.
             const response = await fetch('/api/import-services', {
                 method: 'POST',
                 body: formData,
+                cache: 'no-store',
             });
             const result = await response.json();
             
@@ -427,10 +432,11 @@ function ImportServicesModal({ onServicesImported, closeModal, setNotification }
     };
 
     return (
-        <DialogContent>
+        // FIX: Added classes for a solid white background and black text.
+        <DialogContent className="bg-white text-black">
             <DialogHeader>
                 <DialogTitle>Import Service Data</DialogTitle>
-                <DialogDescription>
+                <DialogDescription className="text-gray-600">
                     Upload an Excel file to import service histories for your vehicles. This will add new service records without creating new vehicles.
                 </DialogDescription>
             </DialogHeader>

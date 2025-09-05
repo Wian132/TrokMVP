@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { type Database } from "@/types/supabase";
-import { supabaseAdmin } from '@/lib/supabase-admin'; // Corrected: Use the admin client
+import { supabaseAdmin } from '@/lib/supabase-admin';
 import * as XLSX from 'xlsx';
 
 type TripInsert = Database['public']['Tables']['truck_trips']['Insert'];
@@ -70,8 +70,7 @@ function findHeaderRow(rows: (string | number | null)[][]): { headerRow: (string
 
 // --- Specialized Parsers ---
 
-function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum: number): TripInsert[] {
-
+function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum: number, importStartDate: Date): TripInsert[] {
     const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
     if (dataStartIndex === -1) return [];
 
@@ -82,61 +81,59 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
     const litresIndex = headers.indexOf('litres');
     const driverIndex = headers.indexOf('driver');
 
-    const validRows: { date: Date; opening_km: number; distance_from_sheet: number; litres: number; driver: string; }[] = [];
+    const allRows: { date: Date; opening_km: number; distance_from_sheet: number; litres: number; driver: string; }[] = [];
     for (let i = dataStartIndex; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
-        
         const date = parseDate(row[dateIndex]);
         const odometer = cleanAndParseFloat(row[odoIndex]);
         const litres = cleanAndParseFloat(row[litresIndex]);
 
         if (date && (!isNaN(odometer) || !isNaN(litres))) {
-            validRows.push({
-                date,
-                opening_km: odometer,
-                distance_from_sheet: cleanAndParseFloat(row[distanceIndex]),
-                litres: litres,
-                driver: String(row[driverIndex] || 'N/A').trim(),
-            });
+            allRows.push({ date, opening_km: odometer, distance_from_sheet: cleanAndParseFloat(row[distanceIndex]), litres, driver: String(row[driverIndex] || 'N/A').trim() });
         }
     }
+    console.log(`Parsed ${allRows.length} total rows from the sheet.`);
+    if (allRows.length === 0) return [];
 
-    if (validRows.length === 0) return [];
-
-    validRows.sort((a, b) => {
+    allRows.sort((a, b) => {
         if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime();
         return a.opening_km - b.opening_km;
     });
 
+    const validRows = allRows.filter(row => row.date >= importStartDate);
+    console.log(`Found ${validRows.length} rows on or after the import start date.`);
+    if (validRows.length === 0) return [];
+
     const trips: TripInsert[] = [];
-    for (let i = 0; i < validRows.length; i++) {
+
+    // Create the baseline trip from the first valid row
+    const baselineTripRow = validRows[0];
+    trips.push({
+        truck_id: truckIdNum,
+        trip_date: baselineTripRow.date.toISOString(),
+        opening_km: isNaN(baselineTripRow.opening_km) ? null : baselineTripRow.opening_km,
+        total_km: 0,
+        liters_filled: null, // No fuel on the first day
+        worker_name: baselineTripRow.driver,
+        is_hours_based: false,
+    });
+    console.log(`Created baseline trip for date: ${baselineTripRow.date.toISOString().split('T')[0]}`);
+
+    // Process subsequent trips
+    for (let i = 1; i < validRows.length; i++) {
         const currentRow = validRows[i];
-        
+        const previousRow = validRows[i - 1];
         let totalKm: number | null = 0;
-        let litersFilled: number | null = 0;
-
-        if (i > 0) {
-            const previousRow = validRows[i - 1];
-            
-            // Litres are from the previous row
-            litersFilled = isNaN(previousRow.litres) ? null : previousRow.litres;
-
-            // Calculate distance based on the difference in odometer readings
-            if (!isNaN(currentRow.opening_km) && !isNaN(previousRow.opening_km) && currentRow.opening_km > previousRow.opening_km) {
-                totalKm = currentRow.opening_km - previousRow.opening_km;
-            } else if (!isNaN(previousRow.distance_from_sheet) && previousRow.distance_from_sheet > 0) {
-                // Fallback to the 'km' column from the previous row if odo is unreliable
-                totalKm = previousRow.distance_from_sheet;
-            } else {
-                totalKm = 0; // Default to 0 if no reliable data
-            }
-        }
+        const litersFilled = isNaN(currentRow.litres) ? null : currentRow.litres;
         
-        // Data integrity checks for totalKm
-        if (totalKm === null || totalKm < 0 || totalKm > 5000) {
-            totalKm = 0;
+        if (!isNaN(currentRow.opening_km) && !isNaN(previousRow.opening_km) && currentRow.opening_km > previousRow.opening_km) {
+            totalKm = currentRow.opening_km - previousRow.opening_km;
+        } else if (!isNaN(currentRow.distance_from_sheet) && currentRow.distance_from_sheet > 0) {
+            totalKm = currentRow.distance_from_sheet;
         }
+
+        if (totalKm === null || totalKm < 0 || totalKm > 5000) totalKm = 0;
         
         trips.push({
             truck_id: truckIdNum,
@@ -148,10 +145,12 @@ function parseStandardKmSheet(jsonData: (string | number | null)[][], truckIdNum
             is_hours_based: false,
         });
     }
+    console.log(`Generated a total of ${trips.length} trip records to be imported.`);
     return trips;
 }
 
-function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: number): TripInsert[] {
+
+function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: number, importStartDate: Date): TripInsert[] {
     const { headerRow, dataStartIndex } = findHeaderRow(jsonData);
     if (dataStartIndex === -1) return [];
 
@@ -161,58 +160,62 @@ function parseHoursSheet(jsonData: (string | number | null)[][], truckIdNum: num
     const litresIndex = headers.indexOf('litres');
     const driverIndex = headers.indexOf('driver');
 
-    const processedRows: { date: Date; odometer: number; litres: number; driver: string; }[] = [];
+    const allRows: { date: Date; odometer: number; litres: number; driver: string; }[] = [];
     for (let i = dataStartIndex; i < jsonData.length; i++) {
         const row = jsonData[i];
         if (!row || row.length === 0 || row.every(cell => cell === null)) continue;
         const date = parseDate(row[dateIndex]);
         const odometer = cleanAndParseFloat(row[odoIndex]);
         if (date && !isNaN(odometer)) {
-            processedRows.push({ 
-                date, 
-                odometer, 
-                litres: cleanAndParseFloat(row[litresIndex]),
-                driver: driverIndex !== -1 ? String(row[driverIndex] || 'N/A').trim() : 'N/A'
-            });
+            allRows.push({ date, odometer, litres: cleanAndParseFloat(row[litresIndex]), driver: driverIndex !== -1 ? String(row[driverIndex] || 'N/A').trim() : 'N/A' });
         }
     }
-
-    if (processedRows.length === 0) return [];
+    console.log(`Parsed ${allRows.length} total rows for hour-based vehicle.`);
+    if (allRows.length === 0) return [];
     
-    processedRows.sort((a, b) => {
+    allRows.sort((a, b) => {
         if (a.date.getTime() !== b.date.getTime()) return a.date.getTime() - b.date.getTime();
         return a.odometer - b.odometer;
     });
 
+    const validRows = allRows.filter(row => row.date >= importStartDate);
+    console.log(`Found ${validRows.length} hour-based rows on or after the import start date.`);
+    if (validRows.length === 0) return [];
+
     const trips: TripInsert[] = [];
-    for (let i = 0; i < processedRows.length; i++) {
-        const currentRow = processedRows[i];
-        let totalKm: number | null = 0; // Represents hours in this context
-        let litersFilled: number | null = 0;
 
-        if (i > 0) {
-            const previousRow = processedRows[i - 1];
-            
-            // Litres are from the previous row
-            litersFilled = isNaN(previousRow.litres) ? null : previousRow.litres;
+    const baselineTripRow = validRows[0];
+    trips.push({
+        truck_id: truckIdNum,
+        trip_date: baselineTripRow.date.toISOString(),
+        opening_km: baselineTripRow.odometer,
+        total_km: 0,
+        liters_filled: null,
+        worker_name: baselineTripRow.driver,
+        is_hours_based: true,
+    });
+    console.log(`Created baseline hour-based trip for date: ${baselineTripRow.date.toISOString().split('T')[0]}`);
 
-            // Distance (hours) is the difference in odometer readings
-            const distance = currentRow.odometer - previousRow.odometer;
-            if (distance > 0) {
-                totalKm = distance;
-            }
-        }
+    for (let i = 1; i < validRows.length; i++) {
+        const currentRow = validRows[i];
+        const previousRow = validRows[i - 1];
+        let totalKm: number | null = 0;
+        const litersFilled = isNaN(currentRow.litres) ? null : currentRow.litres;
+
+        const distance = currentRow.odometer - previousRow.odometer;
+        if (distance > 0) totalKm = distance;
         
         trips.push({
             truck_id: truckIdNum,
             trip_date: currentRow.date.toISOString(),
-            opening_km: currentRow.odometer, // This is 'opening_hrs'
-            total_km: totalKm, // This is 'total_hrs'
+            opening_km: currentRow.odometer,
+            total_km: totalKm,
             liters_filled: litersFilled,
             worker_name: currentRow.driver,
             is_hours_based: true,
         });
     }
+    console.log(`Generated a total of ${trips.length} hour-based trip records to be imported.`);
     return trips;
 }
 
@@ -225,7 +228,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const supabase = supabaseAdmin; // Use the admin client
+    const supabase = supabaseAdmin;
     const bytes = await file.arrayBuffer();
     const workbook = XLSX.read(bytes, { type: 'buffer', cellDates: true });
     
@@ -235,11 +238,18 @@ export async function POST(request: Request) {
 
     for (const sheetName of workbook.SheetNames) {
         const license_plate = sheetName.trim();
+        console.log(`\n--- Processing sheet: ${license_plate} ---`);
         const sheet = workbook.Sheets[sheetName];
-        if (!sheet) continue;
+        if (!sheet) {
+            console.log(`Sheet "${sheetName}" is empty. Skipping.`);
+            continue;
+        }
 
         const jsonData: (string | number | null)[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: null });
-        if (jsonData.length < 2) continue;
+        if (jsonData.length < 2) {
+            console.log(`Sheet "${sheetName}" has insufficient data. Skipping.`);
+            continue;
+        }
 
         const { data: truck, error: truckError } = await supabase.from('trucks').upsert({ license_plate }, { onConflict: 'license_plate' }).select('id').single();
         if (truckError || !truck) {
@@ -249,40 +259,45 @@ export async function POST(request: Request) {
         trucksProcessed++;
         const truckIdNum = truck.id;
 
-        let tripsToInsert: TripInsert[] = [];
+        let finalTrips: TripInsert[] = [];
         const lowerCaseReg = license_plate.toLowerCase();
         
         if (lowerCaseReg.includes('forklift') || lowerCaseReg.includes('lxc821mp')) {
-            tripsToInsert = parseHoursSheet(jsonData, truckIdNum);
+            finalTrips = parseHoursSheet(jsonData, truckIdNum, importStartDate);
         } else {
-            tripsToInsert = parseStandardKmSheet(jsonData, truckIdNum);
+            finalTrips = parseStandardKmSheet(jsonData, truckIdNum, importStartDate);
         }
-        
-        const finalTrips = tripsToInsert.filter(trip => trip.trip_date && new Date(trip.trip_date) >= importStartDate);
 
         if (finalTrips.length > 0) {
             const { data: existingTrips } = await supabase.from("truck_trips").select("trip_date, opening_km").eq("truck_id", truckIdNum);
             const existingTripSet = new Set(existingTrips?.map(t => `${new Date(t.trip_date!).toISOString().split('T')[0]}_${t.opening_km}`) || []);
+            
             const newTrips = finalTrips.filter(trip => {
                 const tripKey = `${new Date(trip.trip_date!).toISOString().split('T')[0]}_${trip.opening_km}`;
                 return !existingTripSet.has(tripKey);
             });
+            console.log(`Found ${newTrips.length} new trips to insert after checking for duplicates.`);
             
             if (newTrips.length > 0) {
                 const { error } = await supabase.from("truck_trips").insert(newTrips);
                 if (error) {
                     console.error(`Error inserting trips for ${license_plate}:`, error.message);
                 } else {
+                    console.log(`Successfully inserted ${newTrips.length} new trips for ${license_plate}.`);
                     totalTripsImported += newTrips.length;
                 }
             }
         }
     }
 
-    return NextResponse.json({ success: true, message: `Import complete! Processed ${trucksProcessed} sheets and imported ${totalTripsImported} new trip records.` });
+    const finalMessage = `Import complete! Processed ${trucksProcessed} sheets and imported ${totalTripsImported} new trip records.`;
+    console.log(`\n--- IMPORT COMPLETE ---`);
+    console.log(finalMessage);
+    return NextResponse.json({ success: true, message: finalMessage });
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'An unknown error occurred.';
+    console.error("--- IMPORT FAILED ---", errorMessage);
     return NextResponse.json({ success: false, message: `Import failed: ${errorMessage}` }, { status: 500 });
   }
 }
